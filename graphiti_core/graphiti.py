@@ -16,12 +16,12 @@ limitations under the License.
 
 import logging
 from datetime import datetime
-from time import time
-from uuid import uuid4
-
 from dotenv import load_dotenv
 from pydantic import BaseModel
+from time import time
+from typing import Any
 from typing_extensions import LiteralString
+from uuid import uuid4
 
 from graphiti_core.cross_encoder.client import CrossEncoderClient
 from graphiti_core.cross_encoder.openai_reranker_client import OpenAIRerankerClient
@@ -37,8 +37,14 @@ from graphiti_core.edges import (
     NextEpisodeEdge,
     create_entity_edge_embeddings,
 )
-from graphiti_core.embedder import EmbedderClient, OpenAIEmbedder
-from graphiti_core.errors import EdgeNotFoundError, NodeNotFoundError
+from graphiti_core.embedder import (
+    EmbedderClient,
+    OpenAIEmbedder,
+)
+from graphiti_core.errors import (
+    EdgeNotFoundError,
+    NodeNotFoundError,
+)
 from graphiti_core.graphiti_types import GraphitiClients
 from graphiti_core.helpers import (
     get_default_group_id,
@@ -46,8 +52,14 @@ from graphiti_core.helpers import (
     validate_excluded_entity_types,
     validate_group_id,
 )
-from graphiti_core.llm_client import LLMClient, OpenAIClient
-from graphiti_core.namespaces import EdgeNamespace, NodeNamespace
+from graphiti_core.llm_client import (
+    LLMClient,
+    OpenAIClient,
+)
+from graphiti_core.namespaces import (
+    EdgeNamespace,
+    NodeNamespace,
+)
 from graphiti_core.nodes import (
     CommunityNode,
     EntityNode,
@@ -59,8 +71,14 @@ from graphiti_core.nodes import (
 )
 from graphiti_core.prompts.lib import prompt_library
 from graphiti_core.prompts.summarize_sagas import SagaSummary
-from graphiti_core.search.search import SearchConfig, search
-from graphiti_core.search.search_config import DEFAULT_SEARCH_LIMIT, SearchResults
+from graphiti_core.search.search import (
+    SearchConfig,
+    search,
+)
+from graphiti_core.search.search_config import (
+    DEFAULT_SEARCH_LIMIT,
+    SearchResults,
+)
 from graphiti_core.search.search_config_recipes import (
     COMBINED_HYBRID_SEARCH_CROSS_ENCODER,
     EDGE_HYBRID_SEARCH_NODE_DISTANCE,
@@ -72,7 +90,10 @@ from graphiti_core.search.search_utils import (
     get_mentioned_nodes,
 )
 from graphiti_core.telemetry import capture_event
-from graphiti_core.tracer import Tracer, create_tracer
+from graphiti_core.tracer import (
+    Tracer,
+    create_tracer,
+)
 from graphiti_core.utils.bulk_utils import (
     RawEpisode,
     add_nodes_and_edges_bulk,
@@ -995,6 +1016,7 @@ class Graphiti:
         custom_extraction_instructions: str | None = None,
         saga: str | SagaNode | None = None,
         saga_previous_episode_uuid: str | None = None,
+            metadata: dict[str, Any] | None = None,
     ) -> AddEpisodeResults:
         """
         Process an episode and update the graph.
@@ -1108,8 +1130,12 @@ class Graphiti:
                         source_description=source_description,
                         created_at=now,
                         valid_at=reference_time,
+                        episode_metadata=metadata,
                     )
                 )
+
+                if uuid is not None and metadata is not None:
+                    episode.episode_metadata = metadata
 
                 # Create default edge type map
                 edge_type_map_default = (
@@ -1316,21 +1342,25 @@ class Graphiti:
                     else {('Entity', 'Entity'): []}
                 )
 
-                episodes = [
-                    await EpisodicNode.get_by_uuid(self.driver, episode.uuid)
-                    if episode.uuid is not None
-                    else EpisodicNode(
-                        name=episode.name,
-                        labels=[],
-                        source=episode.source,
-                        content=episode.content,
-                        source_description=episode.source_description,
-                        group_id=group_id,
-                        created_at=now,
-                        valid_at=episode.reference_time,
-                    )
-                    for episode in bulk_episodes
-                ]
+                episodes: list[EpisodicNode] = []
+                for raw_episode in bulk_episodes:
+                    if raw_episode.uuid is not None:
+                        episode = await EpisodicNode.get_by_uuid(self.driver, raw_episode.uuid)
+                        if raw_episode.metadata is not None:
+                            episode.episode_metadata = raw_episode.metadata
+                    else:
+                        episode = EpisodicNode(
+                            name=raw_episode.name,
+                            labels=[],
+                            source=raw_episode.source,
+                            content=raw_episode.content,
+                            source_description=raw_episode.source_description,
+                            group_id=group_id,
+                            created_at=now,
+                            valid_at=raw_episode.reference_time,
+                            episode_metadata=raw_episode.metadata,
+                        )
+                    episodes.append(episode)
 
                 # Save all episodes
                 await add_nodes_and_edges_bulk(

@@ -14,13 +14,17 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+import json
 import logging
 from datetime import datetime
 from typing import Any
 
 from graphiti_core.driver.driver import GraphProvider
 from graphiti_core.driver.operations.episode_node_ops import EpisodeNodeOperations
-from graphiti_core.driver.query_executor import QueryExecutor, Transaction
+from graphiti_core.driver.query_executor import (
+    QueryExecutor,
+    Transaction,
+)
 from graphiti_core.driver.record_parsers import episodic_node_from_record
 from graphiti_core.errors import NodeNotFoundError
 from graphiti_core.models.nodes.node_db_queries import (
@@ -51,6 +55,11 @@ class FalkorEpisodeNodeOperations(EpisodeNodeOperations):
             'created_at': node.created_at,
             'valid_at': node.valid_at,
             'source': node.source.value,
+            'episode_metadata': (
+                json.dumps(node.episode_metadata, default=str)
+                if node.episode_metadata is not None
+                else None
+            ),
         }
         if tx is not None:
             await tx.run(query, **params)
@@ -71,6 +80,9 @@ class FalkorEpisodeNodeOperations(EpisodeNodeOperations):
             ep = dict(node)
             ep['source'] = str(ep['source'].value)
             ep.pop('labels', None)
+            raw_metadata = ep.get('episode_metadata')
+            if isinstance(raw_metadata, dict):
+                ep['episode_metadata'] = json.dumps(raw_metadata, default=str)
             episodes.append(ep)
 
         query = get_episode_node_save_bulk_query(GraphProvider.FALKORDB)

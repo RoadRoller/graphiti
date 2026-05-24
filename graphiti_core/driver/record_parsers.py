@@ -18,7 +18,12 @@ from typing import Any
 
 from graphiti_core.edges import EntityEdge
 from graphiti_core.helpers import parse_db_date
-from graphiti_core.nodes import CommunityNode, EntityNode, EpisodeType, EpisodicNode
+from graphiti_core.nodes import (
+    CommunityNode,
+    EntityNode,
+    EpisodeType,
+    EpisodicNode,
+)
 
 
 def entity_node_from_record(record: Any) -> EntityNode:
@@ -92,6 +97,18 @@ def episodic_node_from_record(record: Any) -> EpisodicNode:
 
     if created_at is None:
         raise ValueError(f'created_at cannot be None for episode {record.get("uuid", "unknown")}')
+    raw_metadata = record.get('episode_metadata')
+    episode_metadata: dict[str, Any] | None = None
+    if raw_metadata is not None:
+        if isinstance(raw_metadata, dict):
+            episode_metadata = raw_metadata
+        elif isinstance(raw_metadata, str) and raw_metadata != '':
+            try:
+                parsed = json.loads(raw_metadata)
+            except json.JSONDecodeError:
+                parsed = None
+            if isinstance(parsed, dict):
+                episode_metadata = parsed
     if valid_at is None:
         raise ValueError(f'valid_at cannot be None for episode {record.get("uuid", "unknown")}')
 
@@ -102,6 +119,7 @@ def episodic_node_from_record(record: Any) -> EpisodicNode:
         uuid=record['uuid'],
         group_id=record['group_id'],
         source=EpisodeType.from_str(record['source']),
+        episode_metadata=episode_metadata,
         name=record['name'],
         source_description=record['source_description'],
         entity_edges=record['entity_edges'],

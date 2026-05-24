@@ -16,11 +16,13 @@ limitations under the License.
 
 import json
 import logging
+import numpy as np
 import typing
 from datetime import datetime
-
-import numpy as np
-from pydantic import BaseModel, Field
+from pydantic import (
+    BaseModel,
+    Field,
+)
 from typing_extensions import Any
 
 from graphiti_core.driver.driver import (
@@ -28,10 +30,18 @@ from graphiti_core.driver.driver import (
     GraphDriverSession,
     GraphProvider,
 )
-from graphiti_core.edges import Edge, EntityEdge, EpisodicEdge, create_entity_edge_embeddings
+from graphiti_core.edges import (
+    Edge,
+    EntityEdge,
+    EpisodicEdge,
+    create_entity_edge_embeddings,
+)
 from graphiti_core.embedder import EmbedderClient
 from graphiti_core.graphiti_types import GraphitiClients
-from graphiti_core.helpers import normalize_l2, semaphore_gather
+from graphiti_core.helpers import (
+    normalize_l2,
+    semaphore_gather,
+)
 from graphiti_core.models.edges.edge_db_queries import (
     get_entity_edge_save_bulk_query,
     get_episodic_edge_save_bulk_query,
@@ -40,7 +50,11 @@ from graphiti_core.models.nodes.node_db_queries import (
     get_entity_node_save_bulk_query,
     get_episode_node_save_bulk_query,
 )
-from graphiti_core.nodes import EntityNode, EpisodeType, EpisodicNode
+from graphiti_core.nodes import (
+    EntityNode,
+    EpisodeType,
+    EpisodicNode,
+)
 from graphiti_core.utils.datetime_utils import convert_datetimes_to_strings
 from graphiti_core.utils.maintenance.dedup_helpers import (
     DedupResolutionState,
@@ -105,6 +119,7 @@ class RawEpisode(BaseModel):
     source_description: str
     source: EpisodeType
     reference_time: datetime
+    metadata: dict[str, Any] | None = Field(default=None)
 
 
 async def retrieve_previous_episodes_bulk(
@@ -161,6 +176,14 @@ async def add_nodes_and_edges_bulk_tx(
     for episode in episodes:
         episode['source'] = str(episode['source'].value)
         episode.pop('labels', None)
+        raw_metadata = episode.get('episode_metadata')
+        if isinstance(raw_metadata, dict):
+            episode['episode_metadata'] = json.dumps(
+                convert_datetimes_to_strings(raw_metadata),
+            )
+        elif raw_metadata is not None and not isinstance(raw_metadata, str):
+            # Fall back to string representation for unsupported types.
+            episode['episode_metadata'] = json.dumps(raw_metadata, default=str)
 
     nodes = []
 

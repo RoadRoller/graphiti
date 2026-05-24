@@ -16,15 +16,22 @@ limitations under the License.
 
 import json
 import logging
-from abc import ABC, abstractmethod
+from abc import (
+    ABC,
+    abstractmethod,
+)
 from datetime import datetime
 from enum import Enum
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+)
 from time import time
 from typing import Any
-from uuid import uuid4
-
-from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing_extensions import LiteralString
+from uuid import uuid4
 
 from graphiti_core.driver.driver import (
     GraphDriver,
@@ -32,7 +39,10 @@ from graphiti_core.driver.driver import (
 )
 from graphiti_core.embedder import EmbedderClient
 from graphiti_core.errors import NodeNotFoundError
-from graphiti_core.helpers import parse_db_date, validate_node_labels
+from graphiti_core.helpers import (
+    parse_db_date,
+    validate_node_labels,
+)
 from graphiti_core.models.nodes.node_db_queries import (
     COMMUNITY_NODE_RETURN,
     COMMUNITY_NODE_RETURN_NEPTUNE,
@@ -47,6 +57,22 @@ from graphiti_core.models.nodes.node_db_queries import (
     get_saga_node_save_query,
 )
 from graphiti_core.utils.datetime_utils import utc_now
+
+
+def _parse_episode_metadata(raw: Any) -> dict[str, Any] | None:
+    if raw is None:
+        return None
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        if raw == '':
+            return None
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+        return parsed if isinstance(parsed, dict) else None
+    return None
 
 logger = logging.getLogger(__name__)
 
@@ -348,6 +374,11 @@ class EpisodicNode(Node):
             'created_at': self.created_at,
             'valid_at': self.valid_at,
             'source': self.source.value,
+            'episode_metadata': (
+                json.dumps(self.episode_metadata, default=str)
+                if self.episode_metadata is not None
+                else None
+            ),
         }
 
         result = await driver.execute_query(
@@ -1044,6 +1075,7 @@ def get_episodic_node_from_record(record: Any) -> EpisodicNode:
         name=record['name'],
         source_description=record['source_description'],
         entity_edges=record['entity_edges'],
+        episode_metadata=_parse_episode_metadata(record.get('episode_metadata')),
     )
 
 

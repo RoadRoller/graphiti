@@ -18,8 +18,11 @@ import logging
 from typing import Any
 
 import kuzu
-
-from graphiti_core.driver.driver import GraphDriver, GraphDriverSession, GraphProvider
+from graphiti_core.driver.driver import (
+    GraphDriver,
+    GraphDriverSession,
+    GraphProvider,
+)
 from graphiti_core.driver.kuzu.operations.community_edge_ops import KuzuCommunityEdgeOperations
 from graphiti_core.driver.kuzu.operations.community_node_ops import KuzuCommunityNodeOperations
 from graphiti_core.driver.kuzu.operations.entity_edge_ops import KuzuEntityEdgeOperations
@@ -61,7 +64,8 @@ SCHEMA_QUERIES = """
         source_description STRING,
         content STRING,
         valid_at TIMESTAMP,
-        entity_edges STRING[]
+        entity_edges STRING[],
+        episode_metadata STRING
     );
     CREATE NODE TABLE IF NOT EXISTS Entity (
         uuid STRING PRIMARY KEY,
