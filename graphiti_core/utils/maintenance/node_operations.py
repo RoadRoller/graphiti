@@ -15,11 +15,13 @@ limitations under the License.
 """
 
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import (
+    Awaitable,
+    Callable,
+)
+from pydantic import BaseModel
 from time import time
 from typing import Any
-
-from pydantic import BaseModel
 
 from graphiti_core.edges import EntityEdge
 from graphiti_core.graphiti_types import GraphitiClients
@@ -33,7 +35,10 @@ from graphiti_core.nodes import (
     create_entity_node_embeddings,
 )
 from graphiti_core.prompts import prompt_library
-from graphiti_core.prompts.dedupe_nodes import NodeDuplicate, NodeResolutions
+from graphiti_core.prompts.dedupe_nodes import (
+    NodeDuplicate,
+    NodeResolutions,
+)
 from graphiti_core.prompts.extract_nodes import (
     ExtractedEntities,
     ExtractedEntity,
@@ -318,6 +323,7 @@ def _create_entity_nodes(
             labels=labels,
             summary='',
             created_at=utc_now(),
+            metadata=primary_episode.episode_metadata,
         )
         extracted_nodes.append(new_node)
 

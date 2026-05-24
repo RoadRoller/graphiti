@@ -16,12 +16,14 @@ limitations under the License.
 
 import logging
 from datetime import datetime
-from time import time
-
 from pydantic import BaseModel
+from time import time
 from typing_extensions import LiteralString
 
-from graphiti_core.driver.driver import GraphDriver, GraphProvider
+from graphiti_core.driver.driver import (
+    GraphDriver,
+    GraphProvider,
+)
 from graphiti_core.edges import (
     CommunityEdge,
     EntityEdge,
@@ -32,16 +34,26 @@ from graphiti_core.graphiti_types import GraphitiClients
 from graphiti_core.helpers import semaphore_gather
 from graphiti_core.llm_client import LLMClient
 from graphiti_core.llm_client.config import ModelSize
-from graphiti_core.nodes import CommunityNode, EntityNode, EpisodicNode
+from graphiti_core.nodes import (
+    CommunityNode,
+    EntityNode,
+    EpisodicNode,
+)
 from graphiti_core.prompts import prompt_library
 from graphiti_core.prompts.dedupe_edges import EdgeDuplicate
-from graphiti_core.prompts.extract_edges import Edge as ExtractedEdge
-from graphiti_core.prompts.extract_edges import EdgeTimestamps, ExtractedEdges
+from graphiti_core.prompts.extract_edges import (
+    Edge as ExtractedEdge,
+    EdgeTimestamps,
+    ExtractedEdges,
+)
 from graphiti_core.search.search import search
 from graphiti_core.search.search_config import SearchResults
 from graphiti_core.search.search_config_recipes import EDGE_HYBRID_SEARCH_RRF
 from graphiti_core.search.search_filters import SearchFilters
-from graphiti_core.utils.datetime_utils import ensure_utc, utc_now
+from graphiti_core.utils.datetime_utils import (
+    ensure_utc,
+    utc_now,
+)
 from graphiti_core.utils.maintenance.attribute_utils import apply_capped_attributes
 from graphiti_core.utils.maintenance.dedup_helpers import _normalize_string_exact
 from graphiti_core.utils.text_utils import concatenate_episodes
@@ -311,6 +323,7 @@ async def extract_edges(
                 if edge_data.episode_indices and 0 <= edge_data.episode_indices[0] < len(episodes)
                 else primary_episode.valid_at
             ),
+            metadata=primary_episode.episode_metadata,
         )
         edges.append(edge)
         logger.debug(

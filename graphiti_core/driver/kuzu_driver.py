@@ -75,7 +75,8 @@ SCHEMA_QUERIES = """
         created_at TIMESTAMP,
         name_embedding FLOAT[],
         summary STRING,
-        attributes STRING
+        attributes STRING,
+        metadata STRING
     );
     CREATE NODE TABLE IF NOT EXISTS Community (
         uuid STRING PRIMARY KEY,
@@ -97,7 +98,8 @@ SCHEMA_QUERIES = """
         valid_at TIMESTAMP,
         invalid_at TIMESTAMP,
         reference_time TIMESTAMP,
-        attributes STRING
+        attributes STRING,
+        metadata STRING
     );
     CREATE REL TABLE IF NOT EXISTS RELATES_TO(
         FROM Entity TO RelatesToNode_,

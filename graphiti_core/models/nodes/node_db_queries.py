@@ -163,7 +163,8 @@ def get_entity_node_save_query(provider: GraphProvider, labels: str, has_aoss: b
                     n.created_at = $created_at,
                     n.name_embedding = $name_embedding,
                     n.summary = $summary,
-                    n.attributes = $attributes
+                    n.attributes = $attributes,
+                    n.metadata = $metadata
                 WITH n
                 RETURN n.uuid AS uuid
             """
@@ -250,7 +251,8 @@ def get_entity_node_save_bulk_query(
                     n.created_at = $created_at,
                     n.name_embedding = $name_embedding,
                     n.summary = $summary,
-                    n.attributes = $attributes
+                    n.attributes = $attributes,
+                    n.metadata = $metadata
                 RETURN n.uuid AS uuid
             """
         case _:  # Neo4j
@@ -283,7 +285,8 @@ def get_entity_node_return_query(provider: GraphProvider) -> str:
             n.labels AS labels,
             n.created_at AS created_at,
             n.summary AS summary,
-            n.attributes AS attributes
+            n.attributes AS attributes,
+            n.metadata AS metadata
         """
 
     return """

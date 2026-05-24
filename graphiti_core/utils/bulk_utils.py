@@ -204,10 +204,15 @@ async def add_nodes_and_edges_bulk_tx(
         if driver.provider == GraphProvider.KUZU:
             attributes = convert_datetimes_to_strings(node.attributes) if node.attributes else {}
             entity_data['attributes'] = json.dumps(attributes)
+            entity_data['metadata'] = json.dumps(node.metadata or {})
         else:
             for k, v in (node.attributes or {}).items():
                 if k not in entity_data:
                     entity_data[k] = v
+            for k, v in (node.metadata or {}).items():
+                metadata_key = f'metadata_{k}'
+                if metadata_key not in entity_data:
+                    entity_data[metadata_key] = v
 
         nodes.append(entity_data)
 
@@ -234,6 +239,7 @@ async def add_nodes_and_edges_bulk_tx(
         if driver.provider == GraphProvider.KUZU:
             attributes = convert_datetimes_to_strings(edge.attributes) if edge.attributes else {}
             edge_data['attributes'] = json.dumps(attributes)
+            edge_data['metadata'] = json.dumps(edge.metadata or {})
         else:
             # Merge attributes without overwriting explicit edge fields.
             # Attributes may contain stale string versions of typed fields
@@ -242,6 +248,10 @@ async def add_nodes_and_edges_bulk_tx(
             for k, v in (edge.attributes or {}).items():
                 if k not in edge_data:
                     edge_data[k] = v
+            for k, v in (edge.metadata or {}).items():
+                metadata_key = f'metadata_{k}'
+                if metadata_key not in edge_data:
+                    edge_data[metadata_key] = v
 
         edges.append(edge_data)
 

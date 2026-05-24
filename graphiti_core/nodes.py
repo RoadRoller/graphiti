@@ -533,6 +533,9 @@ class EntityNode(Node):
     attributes: dict[str, Any] = Field(
         default={}, description='Additional attributes of the node. Dependent on node labels'
     )
+    metadata: dict[str, Any] | None = Field(
+        default=None, description='User-defined metadata for filtering and organization'
+    )
 
     async def generate_name_embedding(self, embedder: EmbedderClient):
         start = time()
@@ -592,6 +595,7 @@ class EntityNode(Node):
 
         if driver.provider == GraphProvider.KUZU:
             entity_data['attributes'] = json.dumps(self.attributes)
+            entity_data['metadata'] = json.dumps(self.metadata or {})
             entity_data['labels'] = list(set(self.labels + ['Entity']))
             result = await driver.execute_query(
                 get_entity_node_save_query(driver.provider, labels=''),
@@ -601,6 +605,10 @@ class EntityNode(Node):
             for k, v in (self.attributes or {}).items():
                 if k not in entity_data:
                     entity_data[k] = v
+            for k, v in (self.metadata or {}).items():
+                metadata_key = f'metadata_{k}'
+                if metadata_key not in entity_data:
+                    entity_data[metadata_key] = v
             labels = ':'.join(self.labels + ['Entity'])
 
             result = await driver.execute_query(
@@ -1082,6 +1090,8 @@ def get_episodic_node_from_record(record: Any) -> EpisodicNode:
 def get_entity_node_from_record(record: Any, provider: GraphProvider) -> EntityNode:
     if provider == GraphProvider.KUZU:
         attributes = json.loads(record['attributes']) if record['attributes'] else {}
+        metadata_raw = record.get('metadata')
+        metadata: dict[str, Any] | None = json.loads(metadata_raw) if metadata_raw else None
     else:
         attributes = record['attributes']
         attributes.pop('uuid', None)
@@ -1091,6 +1101,14 @@ def get_entity_node_from_record(record: Any, provider: GraphProvider) -> EntityN
         attributes.pop('summary', None)
         attributes.pop('created_at', None)
         attributes.pop('labels', None)
+
+        metadata_keys = [k for k in list(attributes.keys()) if k.startswith('metadata_')]
+        if metadata_keys:
+            metadata = {}
+            for key in metadata_keys:
+                metadata[key[9:]] = attributes.pop(key)
+        else:
+            metadata = None
 
     labels = record.get('labels', [])
     group_id = record.get('group_id')
@@ -1106,6 +1124,7 @@ def get_entity_node_from_record(record: Any, provider: GraphProvider) -> EntityN
         created_at=parse_db_date(record['created_at']),  # type: ignore
         summary=record['summary'],
         attributes=attributes,
+        metadata=metadata,
     )
 
     return entity_node

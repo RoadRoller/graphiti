@@ -16,18 +16,29 @@ limitations under the License.
 
 import json
 import logging
-from abc import ABC, abstractmethod
+from abc import (
+    ABC,
+    abstractmethod,
+)
 from datetime import datetime
+from pydantic import (
+    BaseModel,
+    Field,
+)
 from time import time
 from typing import Any
+from typing_extensions import LiteralString
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
-from typing_extensions import LiteralString
-
-from graphiti_core.driver.driver import GraphDriver, GraphProvider
+from graphiti_core.driver.driver import (
+    GraphDriver,
+    GraphProvider,
+)
 from graphiti_core.embedder import EmbedderClient
-from graphiti_core.errors import EdgeNotFoundError, GroupsEdgesNotFoundError
+from graphiti_core.errors import (
+    EdgeNotFoundError,
+    GroupsEdgesNotFoundError,
+)
 from graphiti_core.helpers import parse_db_date
 from graphiti_core.models.edges.edge_db_queries import (
     COMMUNITY_EDGE_RETURN,
@@ -283,6 +294,9 @@ class EntityEdge(Edge):
     attributes: dict[str, Any] = Field(
         default={}, description='Additional attributes of the edge. Dependent on edge name'
     )
+    metadata: dict[str, Any] | None = Field(
+        default=None, description='User-defined metadata for filtering and organization'
+    )
 
     async def generate_embedding(self, embedder: EmbedderClient):
         start = time()
@@ -357,6 +371,7 @@ class EntityEdge(Edge):
 
         if driver.provider == GraphProvider.KUZU:
             edge_data['attributes'] = json.dumps(self.attributes)
+            edge_data['metadata'] = json.dumps(self.metadata or {})
             result = await driver.execute_query(
                 get_entity_edge_save_query(driver.provider),
                 **edge_data,
@@ -365,6 +380,10 @@ class EntityEdge(Edge):
             for k, v in (self.attributes or {}).items():
                 if k not in edge_data:
                     edge_data[k] = v
+            for k, v in (self.metadata or {}).items():
+                metadata_key = f'metadata_{k}'
+                if metadata_key not in edge_data:
+                    edge_data[metadata_key] = v
             result = await driver.execute_query(
                 get_entity_edge_save_query(driver.provider),
                 edge_data=edge_data,
@@ -969,6 +988,8 @@ def get_entity_edge_from_record(record: Any, provider: GraphProvider) -> EntityE
     episodes = record['episodes']
     if provider == GraphProvider.KUZU:
         attributes = json.loads(record['attributes']) if record['attributes'] else {}
+        metadata_raw = record.get('metadata')
+        metadata: dict[str, Any] | None = json.loads(metadata_raw) if metadata_raw else None
     else:
         attributes = record['attributes']
         attributes.pop('uuid', None)
@@ -985,6 +1006,14 @@ def get_entity_edge_from_record(record: Any, provider: GraphProvider) -> EntityE
         attributes.pop('invalid_at', None)
         attributes.pop('reference_time', None)
 
+        metadata_keys = [k for k in list(attributes.keys()) if k.startswith('metadata_')]
+        if metadata_keys:
+            metadata = {}
+            for key in metadata_keys:
+                metadata[key[9:]] = attributes.pop(key)
+        else:
+            metadata = None
+
     edge = EntityEdge(
         uuid=record['uuid'],
         source_node_uuid=record['source_node_uuid'],
@@ -1000,6 +1029,7 @@ def get_entity_edge_from_record(record: Any, provider: GraphProvider) -> EntityE
         invalid_at=parse_db_date(record['invalid_at']),
         reference_time=parse_db_date(record.get('reference_time')),
         attributes=attributes,
+        metadata=metadata,
     )
 
     return edge

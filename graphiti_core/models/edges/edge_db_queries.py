@@ -97,7 +97,8 @@ def get_entity_edge_save_query(provider: GraphProvider, has_aoss: bool = False) 
                     e.valid_at = $valid_at,
                     e.invalid_at = $invalid_at,
                     e.reference_time = $reference_time,
-                    e.attributes = $attributes
+                    e.attributes = $attributes,
+                    e.metadata = $metadata
                 RETURN e.uuid AS uuid
             """
         case _:  # Neo4j
@@ -162,7 +163,8 @@ def get_entity_edge_save_bulk_query(provider: GraphProvider, has_aoss: bool = Fa
                     e.valid_at = $valid_at,
                     e.invalid_at = $invalid_at,
                     e.reference_time = $reference_time,
-                    e.attributes = $attributes
+                    e.attributes = $attributes,
+                    e.metadata = $metadata
                 RETURN e.uuid AS uuid
             """
         case _:
@@ -218,7 +220,7 @@ def get_entity_edge_return_query(provider: GraphProvider) -> str:
         e.valid_at AS valid_at,
         e.invalid_at AS invalid_at,
     """ + (
-        'e.attributes AS attributes'
+        'e.attributes AS attributes, e.metadata AS metadata'
         if provider == GraphProvider.KUZU
         else 'properties(e) AS attributes'
     )
