@@ -16,9 +16,12 @@ limitations under the License.
 
 from datetime import datetime
 from enum import Enum
+from pydantic import (
+    BaseModel,
+    Field,
+    field_validator,
+)
 from typing import Any
-
-from pydantic import BaseModel, Field, field_validator
 
 from graphiti_core.driver.driver import GraphProvider
 from graphiti_core.helpers import validate_node_labels
@@ -42,16 +45,6 @@ class DateFilter(BaseModel):
     )
 
 
-class PropertyFilter(BaseModel):
-    property_name: str = Field(description='Property name')
-    property_value: str | int | float | None = Field(
-        default=None, description='Value you want to match on for the property'
-    )
-    comparison_operator: ComparisonOperator = Field(
-        description='Comparison operator for the property'
-    )
-
-
 class SearchFilters(BaseModel):
     node_labels: list[str] | None = Field(
         default=None, description='List of node labels to filter on'
@@ -64,7 +57,10 @@ class SearchFilters(BaseModel):
     created_at: list[list[DateFilter]] | None = Field(default=None)
     expired_at: list[list[DateFilter]] | None = Field(default=None)
     edge_uuids: list[str] | None = Field(default=None)
-    property_filters: list[PropertyFilter] | None = Field(default=None)
+    metadata: dict[str, str | int | float] | None = Field(
+        default=None,
+        description='Filter by metadata key-value pairs. Only exact matches are supported.',
+    )
 
     @field_validator('node_labels')
     @classmethod
@@ -100,6 +96,15 @@ def node_search_filter_query_constructor(
             node_labels = '|'.join(filters.node_labels)
             node_label_filter = 'n:' + node_labels
         filter_queries.append(node_label_filter)
+
+    if filters.metadata is not None:
+        for idx, (key, value) in enumerate(filters.metadata.items()):
+            param_name = f'node_metadata_value_{idx}'
+            if provider == GraphProvider.KUZU:
+                filter_queries.append(f"json_extract(n.metadata, '$.{key}') = ${param_name}")
+            else:
+                filter_queries.append(f'n.metadata_{key} = ${param_name}')
+            filter_params[param_name] = value
 
     return filter_queries, filter_params
 
@@ -269,5 +274,14 @@ def edge_search_filter_query_constructor(
                 expired_at_filter += ' OR '
 
         filter_queries.append(expired_at_filter)
+
+    if filters.metadata is not None:
+        for idx, (key, value) in enumerate(filters.metadata.items()):
+            param_name = f'edge_metadata_value_{idx}'
+            if provider == GraphProvider.KUZU:
+                filter_queries.append(f"json_extract(e.metadata, '$.{key}') = ${param_name}")
+            else:
+                filter_queries.append(f'e.metadata_{key} = ${param_name}')
+            filter_params[param_name] = value
 
     return filter_queries, filter_params
