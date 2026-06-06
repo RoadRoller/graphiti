@@ -14,7 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-import json
 import logging
 from datetime import datetime
 from typing import Any
@@ -28,9 +27,9 @@ from graphiti_core.driver.query_executor import (
 from graphiti_core.driver.record_parsers import episodic_node_from_record
 from graphiti_core.errors import NodeNotFoundError
 from graphiti_core.models.nodes.node_db_queries import (
-    EPISODIC_NODE_RETURN,
     get_episode_node_save_bulk_query,
     get_episode_node_save_query,
+    get_episodic_node_return_query,
 )
 from graphiti_core.nodes import EpisodicNode
 
@@ -45,7 +44,7 @@ class Neo4jEpisodeNodeOperations(EpisodeNodeOperations):
         tx: Transaction | None = None,
     ) -> None:
         query = get_episode_node_save_query(GraphProvider.NEO4J)
-        params: dict[str, Any] = {
+        episode_data: dict[str, Any] = {
             'uuid': node.uuid,
             'name': node.name,
             'group_id': node.group_id,
@@ -55,16 +54,16 @@ class Neo4jEpisodeNodeOperations(EpisodeNodeOperations):
             'created_at': node.created_at,
             'valid_at': node.valid_at,
             'source': node.source.value,
-            'episode_metadata': (
-                json.dumps(node.episode_metadata, default=str)
-                if node.episode_metadata is not None
-                else None
-            ),
         }
+        for k, v in (node.metadata or {}).items():
+            metadata_key = f'metadata_{k}'
+            if metadata_key not in episode_data:
+                episode_data[metadata_key] = v
+
         if tx is not None:
-            await tx.run(query, **params)
+            await tx.run(query, episode_data=episode_data)
         else:
-            await executor.execute_query(query, **params)
+            await executor.execute_query(query, episode_data=episode_data)
 
         logger.debug(f'Saved Episode to Graph: {node.uuid}')
 
@@ -77,13 +76,22 @@ class Neo4jEpisodeNodeOperations(EpisodeNodeOperations):
     ) -> None:
         episodes = []
         for node in nodes:
-            ep = dict(node)
-            ep['source'] = str(ep['source'].value)
-            ep.pop('labels', None)
-            raw_metadata = ep.get('episode_metadata')
-            if isinstance(raw_metadata, dict):
-                ep['episode_metadata'] = json.dumps(raw_metadata, default=str)
-            episodes.append(ep)
+            episode_data: dict[str, Any] = {
+                'uuid': node.uuid,
+                'name': node.name,
+                'group_id': node.group_id,
+                'source_description': node.source_description,
+                'content': node.content,
+                'entity_edges': node.entity_edges,
+                'created_at': node.created_at,
+                'valid_at': node.valid_at,
+                'source': node.source.value,
+            }
+            for k, v in (node.metadata or {}).items():
+                metadata_key = f'metadata_{k}'
+                if metadata_key not in episode_data:
+                    episode_data[metadata_key] = v
+            episodes.append(episode_data)
 
         query = get_episode_node_save_bulk_query(GraphProvider.NEO4J)
         if tx is not None:
@@ -159,7 +167,7 @@ class Neo4jEpisodeNodeOperations(EpisodeNodeOperations):
             MATCH (e:Episodic {uuid: $uuid})
             RETURN
             """
-            + EPISODIC_NODE_RETURN
+            + get_episodic_node_return_query(GraphProvider.NEO4J)
         )
         records, _, _ = await executor.execute_query(query, uuid=uuid, routing_='r')
         episodes = [episodic_node_from_record(r) for r in records]
@@ -178,7 +186,7 @@ class Neo4jEpisodeNodeOperations(EpisodeNodeOperations):
             WHERE e.uuid IN $uuids
             RETURN DISTINCT
             """
-            + EPISODIC_NODE_RETURN
+            + get_episodic_node_return_query(GraphProvider.NEO4J)
         )
         records, _, _ = await executor.execute_query(query, uuids=uuids, routing_='r')
         return [episodic_node_from_record(r) for r in records]
@@ -201,7 +209,7 @@ class Neo4jEpisodeNodeOperations(EpisodeNodeOperations):
             + """
             RETURN DISTINCT
             """
-            + EPISODIC_NODE_RETURN
+            + get_episodic_node_return_query(GraphProvider.NEO4J)
             + """
             ORDER BY uuid DESC
             """
@@ -226,7 +234,7 @@ class Neo4jEpisodeNodeOperations(EpisodeNodeOperations):
             MATCH (e:Episodic)-[r:MENTIONS]->(n:Entity {uuid: $entity_node_uuid})
             RETURN DISTINCT
             """
-            + EPISODIC_NODE_RETURN
+            + get_episodic_node_return_query(GraphProvider.NEO4J)
         )
         records, _, _ = await executor.execute_query(
             query, entity_node_uuid=entity_node_uuid, routing_='r'
@@ -242,6 +250,7 @@ class Neo4jEpisodeNodeOperations(EpisodeNodeOperations):
         source: str | None = None,
         saga: str | None = None,
     ) -> list[EpisodicNode]:
+        return_query = get_episodic_node_return_query(GraphProvider.NEO4J)
         if saga is not None and group_ids is not None and len(group_ids) > 0:
             source_clause = 'AND e.source = $source' if source else ''
             query = (
@@ -253,7 +262,7 @@ class Neo4jEpisodeNodeOperations(EpisodeNodeOperations):
                 + """
                 RETURN
                 """
-                + EPISODIC_NODE_RETURN
+                + return_query
                 + """
                 ORDER BY e.valid_at DESC
                 LIMIT $num_episodes
@@ -281,7 +290,7 @@ class Neo4jEpisodeNodeOperations(EpisodeNodeOperations):
                 + """
                 RETURN
                 """
-                + EPISODIC_NODE_RETURN
+                + return_query
                 + """
                 ORDER BY e.valid_at DESC
                 LIMIT $num_episodes

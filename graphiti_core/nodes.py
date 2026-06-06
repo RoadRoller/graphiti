@@ -27,6 +27,7 @@ from pydantic import (
     ConfigDict,
     Field,
     field_validator,
+    model_validator,
 )
 from time import time
 from typing import Any
@@ -46,14 +47,12 @@ from graphiti_core.helpers import (
 from graphiti_core.models.nodes.node_db_queries import (
     COMMUNITY_NODE_RETURN,
     COMMUNITY_NODE_RETURN_NEPTUNE,
-    EPISODIC_NODE_RETURN,
-    EPISODIC_NODE_RETURN_NEPTUNE,
-    SAGA_NODE_RETURN,
-    SAGA_NODE_RETURN_NEPTUNE,
     get_community_node_save_query,
     get_entity_node_return_query,
     get_entity_node_save_query,
     get_episode_node_save_query,
+    get_episodic_node_return_query,
+    get_saga_node_return_query,
     get_saga_node_save_query,
 )
 from graphiti_core.utils.datetime_utils import utc_now
@@ -122,6 +121,9 @@ class Node(BaseModel, ABC):
     group_id: str = Field(description='partition of the graph')
     labels: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: utc_now())
+    metadata: dict[str, Any] | None = Field(
+        default=None, description='User-defined metadata for filtering and organization'
+    )
 
     model_config = ConfigDict(validate_assignment=True)
 
@@ -352,10 +354,26 @@ class EpisodicNode(Node):
         description='list of entity edges referenced in this episode',
         default_factory=list,
     )
-    episode_metadata: dict[str, Any] | None = Field(
-        description='customer-defined metadata key-value pairs for filtering',
-        default=None,
-    )
+
+    # ``metadata`` is inherited from Node base class.
+    # ``episode_metadata`` is accepted as a backward-compat constructor alias.
+
+    @model_validator(mode='before')
+    @classmethod
+    def _accept_episode_metadata(cls, data: Any) -> Any:
+        """Convert legacy ``episode_metadata`` kwarg to ``metadata`` before validation."""
+        if isinstance(data, dict) and 'episode_metadata' in data:
+            data = dict(data)
+            if data.get('metadata') is None:
+                data['metadata'] = data.pop('episode_metadata')
+            else:
+                data.pop('episode_metadata')
+        return data
+
+    @property
+    def episode_metadata(self) -> dict[str, Any] | None:
+        """Backward-compat read alias for metadata."""
+        return self.metadata
 
     async def save(self, driver: GraphDriver):
         if driver.graph_operations_interface:
@@ -364,26 +382,49 @@ class EpisodicNode(Node):
             except NotImplementedError:
                 pass
 
-        episode_args = {
-            'uuid': self.uuid,
-            'name': self.name,
-            'group_id': self.group_id,
-            'source_description': self.source_description,
-            'content': self.content,
-            'entity_edges': self.entity_edges,
-            'created_at': self.created_at,
-            'valid_at': self.valid_at,
-            'source': self.source.value,
-            'episode_metadata': (
-                json.dumps(self.episode_metadata, default=str)
-                if self.episode_metadata is not None
-                else None
-            ),
-        }
+        if driver.provider in (GraphProvider.NEO4J, GraphProvider.FALKORDB):
+            # Build a dict and flatten metadata into metadata_* properties so
+            # storage is consistent with EntityNode / EntityEdge metadata handling.
+            episode_data: dict[str, Any] = {
+                'uuid': self.uuid,
+                'name': self.name,
+                'group_id': self.group_id,
+                'source_description': self.source_description,
+                'content': self.content,
+                'entity_edges': self.entity_edges,
+                'created_at': self.created_at,
+                'valid_at': self.valid_at,
+                'source': self.source.value,
+            }
+            for k, v in (self.metadata or {}).items():
+                metadata_key = f'metadata_{k}'
+                if metadata_key not in episode_data:
+                    episode_data[metadata_key] = v
 
-        result = await driver.execute_query(
-            get_episode_node_save_query(driver.provider), **episode_args
-        )
+            result = await driver.execute_query(
+                get_episode_node_save_query(driver.provider), episode_data=episode_data
+            )
+        else:
+            # Neptune and Kuzu: keep the JSON episode_metadata column approach.
+            episode_args = {
+                'uuid': self.uuid,
+                'name': self.name,
+                'group_id': self.group_id,
+                'source_description': self.source_description,
+                'content': self.content,
+                'entity_edges': self.entity_edges,
+                'created_at': self.created_at,
+                'valid_at': self.valid_at,
+                'source': self.source.value,
+                'episode_metadata': (
+                    json.dumps(self.metadata, default=str)
+                    if self.metadata is not None
+                    else None
+                ),
+            }
+            result = await driver.execute_query(
+                get_episode_node_save_query(driver.provider), **episode_args
+            )
 
         logger.debug(f'Saved Node to Graph: {self.uuid}')
 
@@ -404,11 +445,7 @@ class EpisodicNode(Node):
             MATCH (e:Episodic {uuid: $uuid})
             RETURN
             """
-            + (
-                EPISODIC_NODE_RETURN_NEPTUNE
-                if driver.provider == GraphProvider.NEPTUNE
-                else EPISODIC_NODE_RETURN
-            ),
+            + get_episodic_node_return_query(driver.provider),
             uuid=uuid,
             routing_='r',
         )
@@ -436,11 +473,7 @@ class EpisodicNode(Node):
             WHERE e.uuid IN $uuids
             RETURN DISTINCT
             """
-            + (
-                EPISODIC_NODE_RETURN_NEPTUNE
-                if driver.provider == GraphProvider.NEPTUNE
-                else EPISODIC_NODE_RETURN
-            ),
+            + get_episodic_node_return_query(driver.provider),
             uuids=uuids,
             routing_='r',
         )
@@ -477,11 +510,7 @@ class EpisodicNode(Node):
             + """
             RETURN DISTINCT
             """
-            + (
-                EPISODIC_NODE_RETURN_NEPTUNE
-                if driver.provider == GraphProvider.NEPTUNE
-                else EPISODIC_NODE_RETURN
-            )
+            + get_episodic_node_return_query(driver.provider)
             + """
             ORDER BY uuid DESC
             """
@@ -513,11 +542,7 @@ class EpisodicNode(Node):
             MATCH (e:Episodic)-[r:MENTIONS]->(n:Entity {uuid: $entity_node_uuid})
             RETURN DISTINCT
             """
-            + (
-                EPISODIC_NODE_RETURN_NEPTUNE
-                if driver.provider == GraphProvider.NEPTUNE
-                else EPISODIC_NODE_RETURN
-            ),
+            + get_episodic_node_return_query(driver.provider),
             entity_node_uuid=entity_node_uuid,
             routing_='r',
         )
@@ -532,9 +557,6 @@ class EntityNode(Node):
     summary: str = Field(description='regional summary of surrounding edges', default_factory=str)
     attributes: dict[str, Any] = Field(
         default={}, description='Additional attributes of the node. Dependent on node labels'
-    )
-    metadata: dict[str, Any] | None = Field(
-        default=None, description='User-defined metadata for filtering and organization'
     )
 
     async def generate_name_embedding(self, embedder: EmbedderClient):
@@ -921,18 +943,41 @@ class SagaNode(Node):
             except NotImplementedError:
                 pass
 
-        result = await driver.execute_query(
-            get_saga_node_save_query(driver.provider),
-            uuid=self.uuid,
-            name=self.name,
-            group_id=self.group_id,
-            created_at=self.created_at,
-            summary=self.summary,
-            first_episode_uuid=self.first_episode_uuid,
-            last_episode_uuid=self.last_episode_uuid,
-            last_summarized_at=self.last_summarized_at,
-            last_summarized_episode_valid_at=self.last_summarized_episode_valid_at,
-        )
+        if driver.provider in (GraphProvider.NEO4J, GraphProvider.FALKORDB):
+            # Build a dict and flatten metadata into metadata_* properties.
+            saga_data: dict[str, Any] = {
+                'uuid': self.uuid,
+                'name': self.name,
+                'group_id': self.group_id,
+                'created_at': self.created_at,
+                'summary': self.summary,
+                'first_episode_uuid': self.first_episode_uuid,
+                'last_episode_uuid': self.last_episode_uuid,
+                'last_summarized_at': self.last_summarized_at,
+                'last_summarized_episode_valid_at': self.last_summarized_episode_valid_at,
+            }
+            for k, v in (self.metadata or {}).items():
+                metadata_key = f'metadata_{k}'
+                if metadata_key not in saga_data:
+                    saga_data[metadata_key] = v
+
+            result = await driver.execute_query(
+                get_saga_node_save_query(driver.provider), saga_data=saga_data
+            )
+        else:
+            # Kuzu / Neptune: use individual parameters.
+            result = await driver.execute_query(
+                get_saga_node_save_query(driver.provider),
+                uuid=self.uuid,
+                name=self.name,
+                group_id=self.group_id,
+                created_at=self.created_at,
+                summary=self.summary,
+                first_episode_uuid=self.first_episode_uuid,
+                last_episode_uuid=self.last_episode_uuid,
+                last_summarized_at=self.last_summarized_at,
+                last_summarized_episode_valid_at=self.last_summarized_episode_valid_at,
+            )
 
         logger.debug(f'Saved Node to Graph: {self.uuid}')
 
@@ -970,11 +1015,7 @@ class SagaNode(Node):
             MATCH (s:Saga {uuid: $uuid})
             RETURN
             """
-            + (
-                SAGA_NODE_RETURN_NEPTUNE
-                if driver.provider == GraphProvider.NEPTUNE
-                else SAGA_NODE_RETURN
-            ),
+            + get_saga_node_return_query(driver.provider),
             uuid=uuid,
             routing_='r',
         )
@@ -1002,11 +1043,7 @@ class SagaNode(Node):
             WHERE s.uuid IN $uuids
             RETURN
             """
-            + (
-                SAGA_NODE_RETURN_NEPTUNE
-                if driver.provider == GraphProvider.NEPTUNE
-                else SAGA_NODE_RETURN
-            ),
+            + get_saga_node_return_query(driver.provider),
             uuids=uuids,
             routing_='r',
         )
@@ -1043,11 +1080,7 @@ class SagaNode(Node):
             + """
             RETURN
             """
-            + (
-                SAGA_NODE_RETURN_NEPTUNE
-                if driver.provider == GraphProvider.NEPTUNE
-                else SAGA_NODE_RETURN
-            )
+            + get_saga_node_return_query(driver.provider)
             + """
             ORDER BY s.uuid DESC
             """
@@ -1073,6 +1106,19 @@ def get_episodic_node_from_record(record: Any) -> EpisodicNode:
     if valid_at is None:
         raise ValueError(f'valid_at cannot be None for episode {record.get("uuid", "unknown")}')
 
+    # Neo4j / FalkorDB store metadata as flat metadata_* properties captured via properties(e).
+    # Neptune / Kuzu store metadata as a JSON string in episode_metadata.
+    # NOTE: use .get() not 'key in record' because neo4j Record.__contains__ checks VALUES not keys.
+    ep_props_raw = record.get('ep_properties')
+    if ep_props_raw is not None:
+        ep_props: dict[str, Any] = dict(ep_props_raw)
+        metadata_keys = [k for k in ep_props if k.startswith('metadata_')]
+        episode_metadata: dict[str, Any] | None = (
+            {k[9:]: ep_props[k] for k in metadata_keys} if metadata_keys else None
+        )
+    else:
+        episode_metadata = _parse_episode_metadata(record.get('episode_metadata'))
+
     return EpisodicNode(
         content=record['content'],
         created_at=created_at,
@@ -1083,7 +1129,7 @@ def get_episodic_node_from_record(record: Any) -> EpisodicNode:
         name=record['name'],
         source_description=record['source_description'],
         entity_edges=record['entity_edges'],
-        episode_metadata=_parse_episode_metadata(record.get('episode_metadata')),
+        metadata=episode_metadata,
     )
 
 
@@ -1144,6 +1190,17 @@ def get_community_node_from_record(record: Any) -> CommunityNode:
 def get_saga_node_from_record(record: Any) -> SagaNode:
     last_summarized_at = record.get('last_summarized_at')
     last_summarized_episode_valid_at = record.get('last_summarized_episode_valid_at')
+
+    # Neo4j / FalkorDB include properties(s) AS saga_properties; parse metadata_* from there.
+    # NOTE: use .get() not 'key in record' because neo4j Record.__contains__ checks VALUES not keys.
+    saga_metadata: dict[str, Any] | None = None
+    saga_props_raw = record.get('saga_properties')
+    if saga_props_raw is not None:
+        saga_props: dict[str, Any] = dict(saga_props_raw)
+        metadata_keys = [k for k in saga_props if k.startswith('metadata_')]
+        if metadata_keys:
+            saga_metadata = {k[9:]: saga_props[k] for k in metadata_keys}
+
     return SagaNode(
         uuid=record['uuid'],
         name=record['name'],
@@ -1158,6 +1215,7 @@ def get_saga_node_from_record(record: Any) -> SagaNode:
             if last_summarized_episode_valid_at
             else None
         ),
+        metadata=saga_metadata,
     )
 
 

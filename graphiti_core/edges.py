@@ -41,16 +41,16 @@ from graphiti_core.errors import (
 )
 from graphiti_core.helpers import parse_db_date
 from graphiti_core.models.edges.edge_db_queries import (
-    COMMUNITY_EDGE_RETURN,
-    EPISODIC_EDGE_RETURN,
-    EPISODIC_EDGE_SAVE,
-    HAS_EPISODE_EDGE_RETURN,
-    HAS_EPISODE_EDGE_SAVE,
-    NEXT_EPISODE_EDGE_RETURN,
-    NEXT_EPISODE_EDGE_SAVE,
+    get_community_edge_return_query,
     get_community_edge_save_query,
     get_entity_edge_return_query,
     get_entity_edge_save_query,
+    get_episodic_edge_return_query,
+    get_episodic_edge_save_query,
+    get_has_episode_edge_return_query,
+    get_has_episode_edge_save_query,
+    get_next_episode_edge_return_query,
+    get_next_episode_edge_save_query,
 )
 from graphiti_core.nodes import Node
 
@@ -63,6 +63,9 @@ class Edge(BaseModel, ABC):
     source_node_uuid: str
     target_node_uuid: str
     created_at: datetime
+    metadata: dict[str, Any] | None = Field(
+        default=None, description='User-defined metadata for filtering and organization'
+    )
 
     @abstractmethod
     async def save(self, driver: GraphDriver): ...
@@ -159,14 +162,31 @@ class EpisodicEdge(Edge):
             except NotImplementedError:
                 pass
 
-        result = await driver.execute_query(
-            EPISODIC_EDGE_SAVE,
-            episode_uuid=self.source_node_uuid,
-            entity_uuid=self.target_node_uuid,
-            uuid=self.uuid,
-            group_id=self.group_id,
-            created_at=self.created_at,
-        )
+        if driver.provider in (GraphProvider.NEO4J, GraphProvider.FALKORDB, GraphProvider.NEPTUNE):
+            # Build a dict with metadata_* keys so storage is uniform with EntityEdge.
+            edge_data: dict[str, Any] = {
+                'uuid': self.uuid,
+                'group_id': self.group_id,
+                'created_at': self.created_at,
+            }
+            for k, v in (self.metadata or {}).items():
+                edge_data[f'metadata_{k}'] = v
+
+            result = await driver.execute_query(
+                get_episodic_edge_save_query(driver.provider),
+                episode_uuid=self.source_node_uuid,
+                entity_uuid=self.target_node_uuid,
+                edge_data=edge_data,
+            )
+        else:  # Kuzu
+            result = await driver.execute_query(
+                get_episodic_edge_save_query(driver.provider),
+                episode_uuid=self.source_node_uuid,
+                entity_uuid=self.target_node_uuid,
+                uuid=self.uuid,
+                group_id=self.group_id,
+                created_at=self.created_at,
+            )
 
         logger.debug(f'Saved edge to Graph: {self.uuid}')
 
@@ -187,7 +207,7 @@ class EpisodicEdge(Edge):
             MATCH (n:Episodic)-[e:MENTIONS {uuid: $uuid}]->(m:Entity)
             RETURN
             """
-            + EPISODIC_EDGE_RETURN,
+            + get_episodic_edge_return_query(driver.provider),
             uuid=uuid,
             routing_='r',
         )
@@ -214,7 +234,7 @@ class EpisodicEdge(Edge):
             WHERE e.uuid IN $uuids
             RETURN
             """
-            + EPISODIC_EDGE_RETURN,
+            + get_episodic_edge_return_query(driver.provider),
             uuids=uuids,
             routing_='r',
         )
@@ -253,7 +273,7 @@ class EpisodicEdge(Edge):
             + """
             RETURN
             """
-            + EPISODIC_EDGE_RETURN
+            + get_episodic_edge_return_query(driver.provider)
             + """
             ORDER BY e.uuid DESC
             """
@@ -293,9 +313,6 @@ class EntityEdge(Edge):
     )
     attributes: dict[str, Any] = Field(
         default={}, description='Additional attributes of the edge. Dependent on edge name'
-    )
-    metadata: dict[str, Any] | None = Field(
-        default=None, description='User-defined metadata for filtering and organization'
     )
 
     async def generate_embedding(self, embedder: EmbedderClient):
@@ -599,14 +616,30 @@ class CommunityEdge(Edge):
             except NotImplementedError:
                 pass
 
-        result = await driver.execute_query(
-            get_community_edge_save_query(driver.provider),
-            community_uuid=self.source_node_uuid,
-            entity_uuid=self.target_node_uuid,
-            uuid=self.uuid,
-            group_id=self.group_id,
-            created_at=self.created_at,
-        )
+        if driver.provider in (GraphProvider.NEO4J, GraphProvider.FALKORDB, GraphProvider.NEPTUNE):
+            edge_data: dict[str, Any] = {
+                'uuid': self.uuid,
+                'group_id': self.group_id,
+                'created_at': self.created_at,
+            }
+            for k, v in (self.metadata or {}).items():
+                edge_data[f'metadata_{k}'] = v
+
+            result = await driver.execute_query(
+                get_community_edge_save_query(driver.provider),
+                community_uuid=self.source_node_uuid,
+                entity_uuid=self.target_node_uuid,
+                edge_data=edge_data,
+            )
+        else:  # Kuzu
+            result = await driver.execute_query(
+                get_community_edge_save_query(driver.provider),
+                community_uuid=self.source_node_uuid,
+                entity_uuid=self.target_node_uuid,
+                uuid=self.uuid,
+                group_id=self.group_id,
+                created_at=self.created_at,
+            )
 
         logger.debug(f'Saved edge to Graph: {self.uuid}')
 
@@ -627,7 +660,7 @@ class CommunityEdge(Edge):
             MATCH (n:Community)-[e:HAS_MEMBER {uuid: $uuid}]->(m)
             RETURN
             """
-            + COMMUNITY_EDGE_RETURN,
+            + get_community_edge_return_query(driver.provider),
             uuid=uuid,
             routing_='r',
         )
@@ -652,7 +685,7 @@ class CommunityEdge(Edge):
             WHERE e.uuid IN $uuids
             RETURN
             """
-            + COMMUNITY_EDGE_RETURN,
+            + get_community_edge_return_query(driver.provider),
             uuids=uuids,
             routing_='r',
         )
@@ -689,7 +722,7 @@ class CommunityEdge(Edge):
             + """
             RETURN
             """
-            + COMMUNITY_EDGE_RETURN
+            + get_community_edge_return_query(driver.provider)
             + """
             ORDER BY e.uuid DESC
             """
@@ -713,14 +746,30 @@ class HasEpisodeEdge(Edge):
             except NotImplementedError:
                 pass
 
-        result = await driver.execute_query(
-            HAS_EPISODE_EDGE_SAVE,
-            saga_uuid=self.source_node_uuid,
-            episode_uuid=self.target_node_uuid,
-            uuid=self.uuid,
-            group_id=self.group_id,
-            created_at=self.created_at,
-        )
+        if driver.provider in (GraphProvider.NEO4J, GraphProvider.FALKORDB, GraphProvider.NEPTUNE):
+            edge_data: dict[str, Any] = {
+                'uuid': self.uuid,
+                'group_id': self.group_id,
+                'created_at': self.created_at,
+            }
+            for k, v in (self.metadata or {}).items():
+                edge_data[f'metadata_{k}'] = v
+
+            result = await driver.execute_query(
+                get_has_episode_edge_save_query(driver.provider),
+                saga_uuid=self.source_node_uuid,
+                episode_uuid=self.target_node_uuid,
+                edge_data=edge_data,
+            )
+        else:  # Kuzu
+            result = await driver.execute_query(
+                get_has_episode_edge_save_query(driver.provider),
+                saga_uuid=self.source_node_uuid,
+                episode_uuid=self.target_node_uuid,
+                uuid=self.uuid,
+                group_id=self.group_id,
+                created_at=self.created_at,
+            )
 
         logger.debug(f'Saved edge to Graph: {self.uuid}')
 
@@ -758,7 +807,7 @@ class HasEpisodeEdge(Edge):
             MATCH (n:Saga)-[e:HAS_EPISODE {uuid: $uuid}]->(m:Episodic)
             RETURN
             """
-            + HAS_EPISODE_EDGE_RETURN,
+            + get_has_episode_edge_return_query(driver.provider),
             uuid=uuid,
             routing_='r',
         )
@@ -785,7 +834,7 @@ class HasEpisodeEdge(Edge):
             WHERE e.uuid IN $uuids
             RETURN
             """
-            + HAS_EPISODE_EDGE_RETURN,
+            + get_has_episode_edge_return_query(driver.provider),
             uuids=uuids,
             routing_='r',
         )
@@ -822,7 +871,7 @@ class HasEpisodeEdge(Edge):
             + """
             RETURN
             """
-            + HAS_EPISODE_EDGE_RETURN
+            + get_has_episode_edge_return_query(driver.provider)
             + """
             ORDER BY e.uuid DESC
             """
@@ -846,14 +895,30 @@ class NextEpisodeEdge(Edge):
             except NotImplementedError:
                 pass
 
-        result = await driver.execute_query(
-            NEXT_EPISODE_EDGE_SAVE,
-            source_episode_uuid=self.source_node_uuid,
-            target_episode_uuid=self.target_node_uuid,
-            uuid=self.uuid,
-            group_id=self.group_id,
-            created_at=self.created_at,
-        )
+        if driver.provider in (GraphProvider.NEO4J, GraphProvider.FALKORDB, GraphProvider.NEPTUNE):
+            edge_data: dict[str, Any] = {
+                'uuid': self.uuid,
+                'group_id': self.group_id,
+                'created_at': self.created_at,
+            }
+            for k, v in (self.metadata or {}).items():
+                edge_data[f'metadata_{k}'] = v
+
+            result = await driver.execute_query(
+                get_next_episode_edge_save_query(driver.provider),
+                source_episode_uuid=self.source_node_uuid,
+                target_episode_uuid=self.target_node_uuid,
+                edge_data=edge_data,
+            )
+        else:  # Kuzu
+            result = await driver.execute_query(
+                get_next_episode_edge_save_query(driver.provider),
+                source_episode_uuid=self.source_node_uuid,
+                target_episode_uuid=self.target_node_uuid,
+                uuid=self.uuid,
+                group_id=self.group_id,
+                created_at=self.created_at,
+            )
 
         logger.debug(f'Saved edge to Graph: {self.uuid}')
 
@@ -893,7 +958,7 @@ class NextEpisodeEdge(Edge):
             MATCH (n:Episodic)-[e:NEXT_EPISODE {uuid: $uuid}]->(m:Episodic)
             RETURN
             """
-            + NEXT_EPISODE_EDGE_RETURN,
+            + get_next_episode_edge_return_query(driver.provider),
             uuid=uuid,
             routing_='r',
         )
@@ -920,7 +985,7 @@ class NextEpisodeEdge(Edge):
             WHERE e.uuid IN $uuids
             RETURN
             """
-            + NEXT_EPISODE_EDGE_RETURN,
+            + get_next_episode_edge_return_query(driver.provider),
             uuids=uuids,
             routing_='r',
         )
@@ -957,7 +1022,7 @@ class NextEpisodeEdge(Edge):
             + """
             RETURN
             """
-            + NEXT_EPISODE_EDGE_RETURN
+            + get_next_episode_edge_return_query(driver.provider)
             + """
             ORDER BY e.uuid DESC
             """
@@ -974,6 +1039,21 @@ class NextEpisodeEdge(Edge):
 
 
 # Edge helpers
+def _parse_edge_metadata(record: Any) -> dict[str, Any] | None:
+    """Extract metadata from an edge record.
+
+    Neo4j / FalkorDB / Neptune records contain ``ep_properties`` (all edge
+    properties) from which ``metadata_<key>`` entries are extracted.  Kuzu
+    records do not have this key; metadata is unavailable for Kuzu structural
+    edges (schema change required to support it).
+    """
+    ep_props: dict[str, Any] = record.get('ep_properties') or {}
+    if not ep_props:
+        return None
+    metadata_keys = [k for k in ep_props if k.startswith('metadata_')]
+    return {k[9:]: ep_props[k] for k in metadata_keys} if metadata_keys else None
+
+
 def get_episodic_edge_from_record(record: Any) -> EpisodicEdge:
     return EpisodicEdge(
         uuid=record['uuid'],
@@ -981,6 +1061,7 @@ def get_episodic_edge_from_record(record: Any) -> EpisodicEdge:
         source_node_uuid=record['source_node_uuid'],
         target_node_uuid=record['target_node_uuid'],
         created_at=parse_db_date(record['created_at']),  # type: ignore
+        metadata=_parse_edge_metadata(record),
     )
 
 
@@ -1035,13 +1116,14 @@ def get_entity_edge_from_record(record: Any, provider: GraphProvider) -> EntityE
     return edge
 
 
-def get_community_edge_from_record(record: Any):
+def get_community_edge_from_record(record: Any) -> CommunityEdge:
     return CommunityEdge(
         uuid=record['uuid'],
         group_id=record['group_id'],
         source_node_uuid=record['source_node_uuid'],
         target_node_uuid=record['target_node_uuid'],
         created_at=parse_db_date(record['created_at']),  # type: ignore
+        metadata=_parse_edge_metadata(record),
     )
 
 
@@ -1052,6 +1134,7 @@ def get_has_episode_edge_from_record(record: Any) -> HasEpisodeEdge:
         source_node_uuid=record['source_node_uuid'],
         target_node_uuid=record['target_node_uuid'],
         created_at=parse_db_date(record['created_at']),  # type: ignore
+        metadata=_parse_edge_metadata(record),
     )
 
 
@@ -1062,6 +1145,7 @@ def get_next_episode_edge_from_record(record: Any) -> NextEpisodeEdge:
         source_node_uuid=record['source_node_uuid'],
         target_node_uuid=record['target_node_uuid'],
         created_at=parse_db_date(record['created_at']),  # type: ignore
+        metadata=_parse_edge_metadata(record),
     )
 
 

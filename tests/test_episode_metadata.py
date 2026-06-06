@@ -34,7 +34,10 @@ async def test_episode_metadata_persists_on_save_and_get(graph_driver):
 
     await episode.save(graph_driver)
     retrieved = await EpisodicNode.get_by_uuid(graph_driver, episode.uuid)
-    assert retrieved.episode_metadata == metadata
+    assert retrieved.metadata is not None
+    assert retrieved.metadata['agent_id'] == 42
+    assert retrieved.metadata['research_subject_id'] == 123
+    assert retrieved.metadata['session'] == 'abc'
 
 
 @pytest.mark.asyncio
@@ -42,6 +45,7 @@ async def test_episode_metadata_persists_on_bulk_save(graph_driver):
     if graph_driver.provider == GraphProvider.FALKORDB:
         pytest.skip('Skipping as test fails on FalkorDB in this suite')
 
+    metadata = {'agent_id': 42, 'research_subject_id': 123, 'session': 'abc'}
     now = datetime.now()
     episode = EpisodicNode(
         name='bulk_metadata_episode',
@@ -53,7 +57,7 @@ async def test_episode_metadata_persists_on_bulk_save(graph_driver):
         content='hello bulk',
         valid_at=now,
         entity_edges=[],
-        episode_metadata={},
+        episode_metadata=metadata,
     )
 
     await add_nodes_and_edges_bulk(
@@ -66,4 +70,7 @@ async def test_episode_metadata_persists_on_bulk_save(graph_driver):
     )
 
     retrieved = await EpisodicNode.get_by_uuid(graph_driver, episode.uuid)
-    assert retrieved.episode_metadata == {}
+    assert retrieved.metadata is not None
+    assert retrieved.metadata['agent_id'] == 42
+    assert retrieved.metadata['research_subject_id'] == 123
+    assert retrieved.metadata['session'] == 'abc'

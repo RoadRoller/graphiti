@@ -53,17 +53,17 @@ def get_episode_node_save_query(provider: GraphProvider) -> str:
                 RETURN n.uuid AS uuid
             """
         case GraphProvider.FALKORDB:
+            # Use dict approach to support dynamic metadata_ properties
             return """
-                MERGE (n:Episodic {uuid: $uuid})
-                SET n = {uuid: $uuid, name: $name, group_id: $group_id, source_description: $source_description, source: $source, content: $content,
-                entity_edges: $entity_edges, created_at: $created_at, valid_at: $valid_at, episode_metadata: $episode_metadata}
+                MERGE (n:Episodic {uuid: $episode_data.uuid})
+                SET n = $episode_data
                 RETURN n.uuid AS uuid
             """
         case _:  # Neo4j
+            # Use dict approach to support dynamic metadata_ properties
             return """
-                MERGE (n:Episodic {uuid: $uuid})
-                SET n = {uuid: $uuid, name: $name, group_id: $group_id, source_description: $source_description, source: $source, content: $content,
-                entity_edges: $entity_edges, created_at: $created_at, valid_at: $valid_at, episode_metadata: $episode_metadata}
+                MERGE (n:Episodic {uuid: $episode_data.uuid})
+                SET n = $episode_data
                 RETURN n.uuid AS uuid
             """
 
@@ -96,19 +96,19 @@ def get_episode_node_save_bulk_query(provider: GraphProvider) -> str:
                 RETURN n.uuid AS uuid
             """
         case GraphProvider.FALKORDB:
+            # Use SET n = episode to support dynamic metadata_ keys in the episode dict
             return """
                 UNWIND $episodes AS episode
                 MERGE (n:Episodic {uuid: episode.uuid})
-                SET n = {uuid: episode.uuid, name: episode.name, group_id: episode.group_id, source_description: episode.source_description, source: episode.source, content: episode.content, 
-                entity_edges: episode.entity_edges, created_at: episode.created_at, valid_at: episode.valid_at, episode_metadata: episode.episode_metadata}
+                SET n = episode
                 RETURN n.uuid AS uuid
             """
         case _:  # Neo4j
+            # Use SET n = episode to support dynamic metadata_ keys in the episode dict
             return """
                 UNWIND $episodes AS episode
                 MERGE (n:Episodic {uuid: episode.uuid})
-                SET n = {uuid: episode.uuid, name: episode.name, group_id: episode.group_id, source_description: episode.source_description, source: episode.source, content: episode.content, 
-                entity_edges: episode.entity_edges, created_at: episode.created_at, valid_at: episode.valid_at, episode_metadata: episode.episode_metadata}
+                SET n = episode
                 RETURN n.uuid AS uuid
             """
 
@@ -138,6 +138,36 @@ EPISODIC_NODE_RETURN_NEPTUNE = """
     split(e.entity_edges, ",") AS entity_edges,
     e.episode_metadata AS episode_metadata
 """
+
+# Return query for Neo4j and FalkorDB: uses properties(e) to capture dynamic metadata_ keys
+_EPISODIC_NODE_RETURN_NEO4J_FALKORDB = """
+    e.uuid AS uuid,
+    e.name AS name,
+    e.group_id AS group_id,
+    e.created_at AS created_at,
+    e.source AS source,
+    e.source_description AS source_description,
+    e.content AS content,
+    e.valid_at AS valid_at,
+    e.entity_edges AS entity_edges,
+    properties(e) AS ep_properties
+"""
+
+
+def get_episodic_node_return_query(provider: GraphProvider) -> str:
+    """Return Cypher fragment for reading back an episodic node.
+
+    Neo4j and FalkorDB use ``properties(e)`` so that dynamically-stored
+    ``metadata_<key>`` properties are captured in a single map.  Neptune and
+    Kuzu retain the fixed ``episode_metadata`` column approach.
+    """
+    match provider:
+        case GraphProvider.NEPTUNE:
+            return EPISODIC_NODE_RETURN_NEPTUNE
+        case GraphProvider.KUZU:
+            return EPISODIC_NODE_RETURN
+        case _:  # Neo4j, FalkorDB
+            return _EPISODIC_NODE_RETURN_NEO4J_FALKORDB
 
 
 def get_entity_node_save_query(provider: GraphProvider, labels: str, has_aoss: bool = False) -> str:
@@ -370,7 +400,14 @@ def get_saga_node_save_query(provider: GraphProvider) -> str:
                     n.last_summarized_episode_valid_at = $last_summarized_episode_valid_at
                 RETURN n.uuid AS uuid
             """
-        case _:  # Neo4j, FalkorDB, Neptune
+        case GraphProvider.NEO4J | GraphProvider.FALKORDB:
+            # Use dict approach to support dynamic metadata_ properties
+            return """
+                MERGE (n:Saga {uuid: $saga_data.uuid})
+                SET n = $saga_data
+                RETURN n.uuid AS uuid
+            """
+        case _:  # Neptune (and any future providers)
             return """
                 MERGE (n:Saga {uuid: $uuid})
                 SET n = {uuid: $uuid, name: $name, group_id: $group_id, created_at: $created_at, summary: $summary, first_episode_uuid: $first_episode_uuid, last_episode_uuid: $last_episode_uuid, last_summarized_at: $last_summarized_at, last_summarized_episode_valid_at: $last_summarized_episode_valid_at}
@@ -401,3 +438,33 @@ SAGA_NODE_RETURN_NEPTUNE = """
     s.last_summarized_at AS last_summarized_at,
     s.last_summarized_episode_valid_at AS last_summarized_episode_valid_at
 """
+
+# Return query for Neo4j and FalkorDB: uses properties(s) to capture dynamic metadata_ keys
+_SAGA_NODE_RETURN_NEO4J_FALKORDB = """
+    s.uuid AS uuid,
+    s.name AS name,
+    s.group_id AS group_id,
+    s.created_at AS created_at,
+    s.summary AS summary,
+    s.first_episode_uuid AS first_episode_uuid,
+    s.last_episode_uuid AS last_episode_uuid,
+    s.last_summarized_at AS last_summarized_at,
+    s.last_summarized_episode_valid_at AS last_summarized_episode_valid_at,
+    properties(s) AS saga_properties
+"""
+
+
+def get_saga_node_return_query(provider: GraphProvider) -> str:
+    """Return Cypher fragment for reading back a saga node.
+
+    Neo4j and FalkorDB use ``properties(s)`` so that dynamically-stored
+    ``metadata_<key>`` properties are captured.  Neptune and Kuzu use the
+    fixed-column approach.
+    """
+    match provider:
+        case GraphProvider.NEPTUNE:
+            return SAGA_NODE_RETURN_NEPTUNE
+        case GraphProvider.KUZU:
+            return SAGA_NODE_RETURN
+        case _:  # Neo4j, FalkorDB
+            return _SAGA_NODE_RETURN_NEO4J_FALKORDB

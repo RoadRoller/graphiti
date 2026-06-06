@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+import json
 from typing import Any
 
 from graphiti_core.edges import EntityEdge
@@ -26,6 +27,17 @@ from graphiti_core.nodes import (
 )
 
 
+def _extract_metadata_from_attributes(attributes: dict[str, Any]) -> dict[str, Any] | None:
+    """Extract metadata_* prefixed keys from an attributes dict, removing them in place."""
+    metadata_keys = [k for k in list(attributes.keys()) if k.startswith('metadata_')]
+    if not metadata_keys:
+        return None
+    metadata: dict[str, Any] = {}
+    for key in metadata_keys:
+        metadata[key[9:]] = attributes.pop(key)
+    return metadata
+
+
 def entity_node_from_record(record: Any) -> EntityNode:
     """Parse an entity node from a database record."""
     attributes = record['attributes']
@@ -36,6 +48,8 @@ def entity_node_from_record(record: Any) -> EntityNode:
     attributes.pop('summary', None)
     attributes.pop('created_at', None)
     attributes.pop('labels', None)
+
+    metadata = _extract_metadata_from_attributes(attributes)
 
     labels = record.get('labels', [])
     group_id = record.get('group_id')
@@ -52,6 +66,7 @@ def entity_node_from_record(record: Any) -> EntityNode:
         created_at=parse_db_date(record['created_at']),  # type: ignore[arg-type]
         summary=record['summary'],
         attributes=attributes,
+        metadata=metadata,
     )
 
 
@@ -72,6 +87,8 @@ def entity_edge_from_record(record: Any) -> EntityEdge:
     attributes.pop('invalid_at', None)
     attributes.pop('reference_time', None)
 
+    metadata = _extract_metadata_from_attributes(attributes)
+
     return EntityEdge(
         uuid=record['uuid'],
         source_node_uuid=record['source_node_uuid'],
@@ -87,6 +104,7 @@ def entity_edge_from_record(record: Any) -> EntityEdge:
         invalid_at=parse_db_date(record['invalid_at']),
         reference_time=parse_db_date(record.get('reference_time')),
         attributes=attributes,
+        metadata=metadata,
     )
 
 
@@ -97,20 +115,32 @@ def episodic_node_from_record(record: Any) -> EpisodicNode:
 
     if created_at is None:
         raise ValueError(f'created_at cannot be None for episode {record.get("uuid", "unknown")}')
-    raw_metadata = record.get('episode_metadata')
-    episode_metadata: dict[str, Any] | None = None
-    if raw_metadata is not None:
-        if isinstance(raw_metadata, dict):
-            episode_metadata = raw_metadata
-        elif isinstance(raw_metadata, str) and raw_metadata != '':
-            try:
-                parsed = json.loads(raw_metadata)
-            except json.JSONDecodeError:
-                parsed = None
-            if isinstance(parsed, dict):
-                episode_metadata = parsed
     if valid_at is None:
         raise ValueError(f'valid_at cannot be None for episode {record.get("uuid", "unknown")}')
+
+    # Support both flat metadata_* props (Neo4j/FalkorDB via ep_properties) and
+    # JSON episode_metadata column (Kuzu/Neptune).
+    # NOTE: use .get() not 'key in record' because neo4j Record.__contains__ checks VALUES.
+    ep_props_raw = record.get('ep_properties')
+    if ep_props_raw is not None:
+        ep_props: dict[str, Any] = dict(ep_props_raw)
+        metadata_keys = [k for k in ep_props if k.startswith('metadata_')]
+        episode_metadata: dict[str, Any] | None = (
+            {k[9:]: ep_props[k] for k in metadata_keys} if metadata_keys else None
+        )
+    else:
+        raw_metadata = record.get('episode_metadata')
+        episode_metadata = None
+        if raw_metadata is not None:
+            if isinstance(raw_metadata, dict):
+                episode_metadata = raw_metadata
+            elif isinstance(raw_metadata, str) and raw_metadata != '':
+                try:
+                    parsed = json.loads(raw_metadata)
+                    if isinstance(parsed, dict):
+                        episode_metadata = parsed
+                except json.JSONDecodeError:
+                    pass
 
     return EpisodicNode(
         content=record['content'],

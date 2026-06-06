@@ -19,26 +19,32 @@ from typing import Any
 
 from graphiti_core.driver.driver import GraphProvider
 from graphiti_core.driver.operations.community_edge_ops import CommunityEdgeOperations
-from graphiti_core.driver.query_executor import QueryExecutor, Transaction
-from graphiti_core.edges import CommunityEdge
+from graphiti_core.driver.query_executor import (
+    QueryExecutor,
+    Transaction,
+)
+from graphiti_core.edges import (
+    CommunityEdge,
+    get_community_edge_from_record,
+)
 from graphiti_core.errors import EdgeNotFoundError
-from graphiti_core.helpers import parse_db_date
 from graphiti_core.models.edges.edge_db_queries import (
-    COMMUNITY_EDGE_RETURN,
+    get_community_edge_return_query,
     get_community_edge_save_query,
 )
 
 logger = logging.getLogger(__name__)
 
 
-def _community_edge_from_record(record: Any) -> CommunityEdge:
-    return CommunityEdge(
-        uuid=record['uuid'],
-        group_id=record['group_id'],
-        source_node_uuid=record['source_node_uuid'],
-        target_node_uuid=record['target_node_uuid'],
-        created_at=parse_db_date(record['created_at']),  # type: ignore[arg-type]
-    )
+def _community_edge_data(edge: CommunityEdge) -> dict[str, Any]:
+    edge_data: dict[str, Any] = {
+        'uuid': edge.uuid,
+        'group_id': edge.group_id,
+        'created_at': edge.created_at,
+    }
+    for k, v in (edge.metadata or {}).items():
+        edge_data[f'metadata_{k}'] = v
+    return edge_data
 
 
 class NeptuneCommunityEdgeOperations(CommunityEdgeOperations):
@@ -52,9 +58,7 @@ class NeptuneCommunityEdgeOperations(CommunityEdgeOperations):
         params: dict[str, Any] = {
             'community_uuid': edge.source_node_uuid,
             'entity_uuid': edge.target_node_uuid,
-            'uuid': edge.uuid,
-            'group_id': edge.group_id,
-            'created_at': edge.created_at,
+            'edge_data': _community_edge_data(edge),
         }
         if tx is not None:
             await tx.run(query, **params)
@@ -106,10 +110,10 @@ class NeptuneCommunityEdgeOperations(CommunityEdgeOperations):
             MATCH (n:Community)-[e:HAS_MEMBER {uuid: $uuid}]->(m)
             RETURN
             """
-            + COMMUNITY_EDGE_RETURN
+            + get_community_edge_return_query(GraphProvider.NEPTUNE)
         )
         records, _, _ = await executor.execute_query(query, uuid=uuid)
-        edges = [_community_edge_from_record(r) for r in records]
+        edges = [get_community_edge_from_record(r) for r in records]
         if len(edges) == 0:
             raise EdgeNotFoundError(uuid)
         return edges[0]
@@ -125,10 +129,10 @@ class NeptuneCommunityEdgeOperations(CommunityEdgeOperations):
             WHERE e.uuid IN $uuids
             RETURN
             """
-            + COMMUNITY_EDGE_RETURN
+            + get_community_edge_return_query(GraphProvider.NEPTUNE)
         )
         records, _, _ = await executor.execute_query(query, uuids=uuids)
-        return [_community_edge_from_record(r) for r in records]
+        return [get_community_edge_from_record(r) for r in records]
 
     async def get_by_group_ids(
         self,
@@ -148,7 +152,7 @@ class NeptuneCommunityEdgeOperations(CommunityEdgeOperations):
             + """
             RETURN
             """
-            + COMMUNITY_EDGE_RETURN
+            + get_community_edge_return_query(GraphProvider.NEPTUNE)
             + """
             ORDER BY e.uuid DESC
             """
@@ -160,4 +164,4 @@ class NeptuneCommunityEdgeOperations(CommunityEdgeOperations):
             uuid=uuid_cursor,
             limit=limit,
         )
-        return [_community_edge_from_record(r) for r in records]
+        return [get_community_edge_from_record(r) for r in records]

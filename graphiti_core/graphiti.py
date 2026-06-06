@@ -365,7 +365,11 @@ class Graphiti:
         await self.driver.close()
 
     async def _get_or_create_saga(
-        self, saga_name: str, group_id: str, created_at: datetime
+            self,
+            saga_name: str,
+            group_id: str,
+            created_at: datetime,
+            metadata: dict[str, Any] | None = None,
     ) -> SagaNode:
         """
         Get an existing saga by name or create a new one.
@@ -381,6 +385,8 @@ class Graphiti:
             originating episode's reference time (``valid_at``) rather than the
             current wall-clock time so the saga's ``created_at`` reflects the
             episode it was minted from.
+        metadata : dict[str, Any] | None
+            Optional metadata to attach to a newly created saga node.
 
         Returns
         -------
@@ -408,7 +414,7 @@ class Graphiti:
                 created_at=parse_db_date(record['created_at']),  # type: ignore
             )
 
-        saga = SagaNode(name=saga_name, group_id=group_id, created_at=created_at)
+        saga = SagaNode(name=saga_name, group_id=group_id, created_at=created_at, metadata=metadata)
         await saga.save(self.driver)
         return saga
 
@@ -738,7 +744,13 @@ class Graphiti:
         episodes = episode if isinstance(episode, list) else [episode]
         episode_uuids = [ep.uuid for ep in episodes]
 
-        episodic_edges = build_episodic_edges(nodes, episode_uuids, now, node_episode_index_map)
+        episodic_edges = build_episodic_edges(
+            nodes,
+            episode_uuids,
+            now,
+            node_episode_index_map,
+            metadata_by_uuid={ep.uuid: ep.episode_metadata for ep in episodes},
+        )
         for ep in episodes:
             ep.entity_edges = [edge.uuid for edge in entity_edges]
             if not self.store_raw_episode_content:
@@ -763,7 +775,9 @@ class Graphiti:
                 # newly created saga so its created_at matches the episode that
                 # minted it, not the wall-clock time of this run.
                 saga_created_at = primary_episode.valid_at or now
-                saga_node = await self._get_or_create_saga(saga, group_id, saga_created_at)
+                saga_node = await self._get_or_create_saga(
+                    saga, group_id, saga_created_at, primary_episode.episode_metadata
+                )
             else:
                 saga_node = saga
 
@@ -781,6 +795,7 @@ class Graphiti:
                     target_node_uuid=primary_episode.uuid,
                     group_id=group_id,
                     created_at=now,
+                    metadata=primary_episode.episode_metadata,
                 )
                 await next_episode_edge.save(self.driver)
 
@@ -790,6 +805,7 @@ class Graphiti:
                 target_node_uuid=primary_episode.uuid,
                 group_id=group_id,
                 created_at=now,
+                metadata=primary_episode.episode_metadata,
             )
             await has_episode_edge.save(self.driver)
 
@@ -1135,7 +1151,7 @@ class Graphiti:
                 )
 
                 if uuid is not None and metadata is not None:
-                    episode.episode_metadata = metadata
+                    episode.metadata = metadata
 
                 # Create default edge type map
                 edge_type_map_default = (
@@ -1347,7 +1363,7 @@ class Graphiti:
                     if raw_episode.uuid is not None:
                         episode = await EpisodicNode.get_by_uuid(self.driver, raw_episode.uuid)
                         if raw_episode.metadata is not None:
-                            episode.episode_metadata = raw_episode.metadata
+                            episode.metadata = raw_episode.metadata
                     else:
                         episode = EpisodicNode(
                             name=raw_episode.name,
@@ -1392,7 +1408,15 @@ class Graphiti:
                 # Create Episodic Edges
                 episodic_edges: list[EpisodicEdge] = []
                 for episode_uuid, nodes in nodes_by_episode.items():
-                    episodic_edges.extend(build_episodic_edges(nodes, episode_uuid, now))
+                    # Map from episode UUID to its EpisodicNode to extract metadata
+                    ep_meta_map: dict[str, dict[str, Any] | None] = {
+                        ep.uuid: ep.episode_metadata for ep in episodes
+                    }
+                    episodic_edges.extend(
+                        build_episodic_edges(
+                            nodes, episode_uuid, now, metadata_by_uuid=ep_meta_map
+                        )
+                    )
 
                 # Re-map edge pointers and dedupe edges
                 extracted_edges_bulk_updated: list[list[EntityEdge]] = [
@@ -1446,7 +1470,12 @@ class Graphiti:
                         # episode window rather than the time this run started.
                         valid_ats = [ep.valid_at for ep in episodes if ep.valid_at is not None]
                         saga_created_at = min(valid_ats) if valid_ats else now
-                        saga_node = await self._get_or_create_saga(saga, group_id, saga_created_at)
+                        saga_node = await self._get_or_create_saga(
+                            saga,
+                            group_id,
+                            saga_created_at,
+                            sorted_episodes[0].episode_metadata if sorted_episodes else None,
+                        )
                     else:
                         saga_node = saga
 
@@ -1466,6 +1495,7 @@ class Graphiti:
                                 target_node_uuid=episode.uuid,
                                 group_id=group_id,
                                 created_at=now,
+                                metadata=episode.episode_metadata,
                             )
                             await next_episode_edge.save(self.driver)
 
@@ -1475,6 +1505,7 @@ class Graphiti:
                             target_node_uuid=episode.uuid,
                             group_id=group_id,
                             created_at=now,
+                            metadata=episode.episode_metadata,
                         )
                         await has_episode_edge.save(self.driver)
 

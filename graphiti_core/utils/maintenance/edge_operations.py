@@ -18,6 +18,7 @@ import logging
 from datetime import datetime
 from pydantic import BaseModel
 from time import time
+from typing import Any
 from typing_extensions import LiteralString
 
 from graphiti_core.driver.driver import (
@@ -66,6 +67,7 @@ def build_episodic_edges(
     episode_uuid: str | list[str],
     created_at: datetime,
     node_episode_index_map: dict[str, list[int]] | None = None,
+        metadata_by_uuid: dict[str, dict[str, Any] | None] | None = None,
 ) -> list[EpisodicEdge]:
     """Build episodic (MENTIONED_IN) edges between entity nodes and episodes.
 
@@ -82,6 +84,10 @@ def build_episodic_edges(
         When provided with a list of episode_uuids, each node is connected
         only to its attributed episodes. When None, every node is connected
         to all episodes.
+    metadata_by_uuid : dict[str, dict[str, Any] | None] | None
+        Optional mapping from episode UUID to its metadata dict.  When
+        provided, each ``EpisodicEdge`` receives the metadata of its source
+        episode.
     """
     episode_uuids = [episode_uuid] if isinstance(episode_uuid, str) else episode_uuid
 
@@ -94,12 +100,17 @@ def build_episodic_edges(
 
         for idx in indices:
             if 0 <= idx < len(episode_uuids):
+                ep_uuid = episode_uuids[idx]
+                ep_metadata = (
+                    metadata_by_uuid.get(ep_uuid) if metadata_by_uuid is not None else None
+                )
                 episodic_edges.append(
                     EpisodicEdge(
-                        source_node_uuid=episode_uuids[idx],
+                        source_node_uuid=ep_uuid,
                         target_node_uuid=node.uuid,
                         created_at=created_at,
                         group_id=node.group_id,
+                        metadata=ep_metadata,
                     )
                 )
 
@@ -119,6 +130,7 @@ def build_community_edges(
             target_node_uuid=node.uuid,
             created_at=created_at,
             group_id=community_node.group_id,
+            metadata=node.metadata,
         )
         for node in entity_nodes
     ]

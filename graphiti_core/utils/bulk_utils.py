@@ -176,14 +176,26 @@ async def add_nodes_and_edges_bulk_tx(
     for episode in episodes:
         episode['source'] = str(episode['source'].value)
         episode.pop('labels', None)
-        raw_metadata = episode.get('episode_metadata')
-        if isinstance(raw_metadata, dict):
-            episode['episode_metadata'] = json.dumps(
-                convert_datetimes_to_strings(raw_metadata),
-            )
-        elif raw_metadata is not None and not isinstance(raw_metadata, str):
-            # Fall back to string representation for unsupported types.
-            episode['episode_metadata'] = json.dumps(raw_metadata, default=str)
+        raw_metadata = episode.pop('metadata', None)
+
+        if driver.provider in (GraphProvider.NEO4J, GraphProvider.FALKORDB):
+            # Flatten episode_metadata into metadata_* flat properties so storage
+            # is consistent with EntityNode / EntityEdge metadata handling.
+            if isinstance(raw_metadata, dict):
+                for k, v in raw_metadata.items():
+                    metadata_key = f'metadata_{k}'
+                    if metadata_key not in episode:
+                        episode[metadata_key] = v
+        else:
+            # Neptune / Kuzu: keep as a JSON string in episode_metadata column.
+            if isinstance(raw_metadata, dict):
+                episode['episode_metadata'] = json.dumps(
+                    convert_datetimes_to_strings(raw_metadata),
+                )
+            elif raw_metadata is not None and not isinstance(raw_metadata, str):
+                episode['episode_metadata'] = json.dumps(raw_metadata, default=str)
+            else:
+                episode['episode_metadata'] = raw_metadata
 
     nodes = []
 
@@ -278,6 +290,23 @@ async def add_nodes_and_edges_bulk_tx(
         for edge in episodic_edges:
             await tx.run(episodic_edge_query, **edge.model_dump())
     else:
+        # Neo4j / FalkorDB / Neptune: build flat dicts for episodic edges with
+        # metadata_* keys so the bulk SET e = edge query persists them.
+        episodic_edge_dicts = []
+        for ep_edge in episodic_edges:
+            ep_edge_dict: dict[str, Any] = {
+                'uuid': ep_edge.uuid,
+                'group_id': ep_edge.group_id,
+                'source_node_uuid': ep_edge.source_node_uuid,
+                'target_node_uuid': ep_edge.target_node_uuid,
+                'created_at': ep_edge.created_at,
+            }
+            for k, v in (ep_edge.metadata or {}).items():
+                metadata_key = f'metadata_{k}'
+                if metadata_key not in ep_edge_dict:
+                    ep_edge_dict[metadata_key] = v
+            episodic_edge_dicts.append(ep_edge_dict)
+
         await tx.run(get_episode_node_save_bulk_query(driver.provider), episodes=episodes)
         await tx.run(
             get_entity_node_save_bulk_query(driver.provider, nodes),
@@ -285,7 +314,7 @@ async def add_nodes_and_edges_bulk_tx(
         )
         await tx.run(
             get_episodic_edge_save_bulk_query(driver.provider),
-            episodic_edges=[edge.model_dump() for edge in episodic_edges],
+            episodic_edges=episodic_edge_dicts,
         )
         await tx.run(
             get_entity_edge_save_bulk_query(driver.provider),

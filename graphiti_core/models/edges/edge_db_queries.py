@@ -16,6 +16,7 @@ limitations under the License.
 
 from graphiti_core.driver.driver import GraphProvider
 
+# Kept as constant for backward compatibility; prefer get_episodic_edge_save_query().
 EPISODIC_EDGE_SAVE = """
     MATCH (episode:Episodic {uuid: $episode_uuid})
     MATCH (node:Entity {uuid: $entity_uuid})
@@ -25,6 +26,35 @@ EPISODIC_EDGE_SAVE = """
         e.created_at = $created_at
     RETURN e.uuid AS uuid
 """
+
+
+def get_episodic_edge_save_query(provider: GraphProvider) -> str:
+    """Save query for a MENTIONS (episodic) edge.
+
+    Neo4j, FalkorDB, and Neptune pass an ``$edge_data`` dict so that
+    dynamically-generated ``metadata_<key>`` properties are written alongside
+    the core fields via ``SET e = $edge_data``.
+    Kuzu retains the individual-parameter approach.
+    """
+    match provider:
+        case GraphProvider.KUZU:
+            return """
+                MATCH (episode:Episodic {uuid: $episode_uuid})
+                MATCH (node:Entity {uuid: $entity_uuid})
+                MERGE (episode)-[e:MENTIONS {uuid: $uuid}]->(node)
+                SET
+                    e.group_id = $group_id,
+                    e.created_at = $created_at
+                RETURN e.uuid AS uuid
+            """
+        case _:  # Neo4j, FalkorDB, Neptune
+            return """
+                MATCH (episode:Episodic {uuid: $episode_uuid})
+                MATCH (node:Entity {uuid: $entity_uuid})
+                MERGE (episode)-[e:MENTIONS {uuid: $edge_data.uuid}]->(node)
+                SET e = $edge_data
+                RETURN e.uuid AS uuid
+            """
 
 
 def get_episodic_edge_save_bulk_query(provider: GraphProvider) -> str:
@@ -39,24 +69,51 @@ def get_episodic_edge_save_bulk_query(provider: GraphProvider) -> str:
             RETURN e.uuid AS uuid
         """
 
+    # Neo4j, FalkorDB, Neptune: SET e = edge stores all keys including metadata_*
     return """
         UNWIND $episodic_edges AS edge
         MATCH (episode:Episodic {uuid: edge.source_node_uuid})
         MATCH (node:Entity {uuid: edge.target_node_uuid})
         MERGE (episode)-[e:MENTIONS {uuid: edge.uuid}]->(node)
-        SET
-            e.group_id = edge.group_id,
-            e.created_at = edge.created_at
+        SET e = edge
         RETURN e.uuid AS uuid
     """
 
 
+# Kept as constant for backward compatibility; prefer get_episodic_edge_return_query().
 EPISODIC_EDGE_RETURN = """
     e.uuid AS uuid,
     e.group_id AS group_id,
     n.uuid AS source_node_uuid,
     m.uuid AS target_node_uuid,
     e.created_at AS created_at
+"""
+
+
+def get_episodic_edge_return_query(provider: GraphProvider) -> str:
+    """Return Cypher fragment for reading back a MENTIONS edge.
+
+    Neo4j, FalkorDB, and Neptune include ``properties(e)`` so that
+    ``metadata_<key>`` properties are captured.  Kuzu uses the fixed-column
+    approach (no dynamic metadata on relationship schema).
+    """
+    match provider:
+        case GraphProvider.KUZU:
+            return """
+    e.uuid AS uuid,
+    e.group_id AS group_id,
+    n.uuid AS source_node_uuid,
+    m.uuid AS target_node_uuid,
+    e.created_at AS created_at
+"""
+        case _:  # Neo4j, FalkorDB, Neptune
+            return """
+    e.uuid AS uuid,
+    e.group_id AS group_id,
+    n.uuid AS source_node_uuid,
+    m.uuid AS target_node_uuid,
+    e.created_at AS created_at,
+    properties(e) AS ep_properties
 """
 
 
@@ -227,26 +284,12 @@ def get_entity_edge_return_query(provider: GraphProvider) -> str:
 
 
 def get_community_edge_save_query(provider: GraphProvider) -> str:
+    """Save query for a HAS_MEMBER edge (Community -> Entity/Community).
+
+    Non-Kuzu providers use ``$edge_data`` dict so that ``metadata_<key>``
+    properties are persisted.
+    """
     match provider:
-        case GraphProvider.FALKORDB:
-            return """
-                MATCH (community:Community {uuid: $community_uuid})
-                MATCH (node {uuid: $entity_uuid})
-                MERGE (community)-[e:HAS_MEMBER {uuid: $uuid}]->(node)
-                SET e = {uuid: $uuid, group_id: $group_id, created_at: $created_at}
-                RETURN e.uuid AS uuid
-            """
-        case GraphProvider.NEPTUNE:
-            return """
-                MATCH (community:Community {uuid: $community_uuid})
-                MATCH (node {uuid: $entity_uuid})
-                WHERE node:Entity OR node:Community
-                MERGE (community)-[r:HAS_MEMBER {uuid: $uuid}]->(node)
-                SET r.uuid= $uuid
-                SET r.group_id= $group_id
-                SET r.created_at= $created_at
-                RETURN r.uuid AS uuid
-            """
         case GraphProvider.KUZU:
             return """
                 MATCH (community:Community {uuid: $community_uuid})
@@ -265,16 +308,17 @@ def get_community_edge_save_query(provider: GraphProvider) -> str:
                     e.created_at = $created_at
                 RETURN e.uuid AS uuid
             """
-        case _:  # Neo4j
+        case _:  # Neo4j, FalkorDB, Neptune
             return """
                 MATCH (community:Community {uuid: $community_uuid})
                 MATCH (node:Entity | Community {uuid: $entity_uuid})
-                MERGE (community)-[e:HAS_MEMBER {uuid: $uuid}]->(node)
-                SET e = {uuid: $uuid, group_id: $group_id, created_at: $created_at}
+                MERGE (community)-[e:HAS_MEMBER {uuid: $edge_data.uuid}]->(node)
+                SET e = $edge_data
                 RETURN e.uuid AS uuid
             """
 
 
+# Kept for backward compatibility; prefer get_community_edge_return_query().
 COMMUNITY_EDGE_RETURN = """
     e.uuid AS uuid,
     e.group_id AS group_id,
@@ -284,6 +328,29 @@ COMMUNITY_EDGE_RETURN = """
 """
 
 
+def get_community_edge_return_query(provider: GraphProvider) -> str:
+    """Return fragment for a HAS_MEMBER edge."""
+    match provider:
+        case GraphProvider.KUZU:
+            return """
+    e.uuid AS uuid,
+    e.group_id AS group_id,
+    n.uuid AS source_node_uuid,
+    m.uuid AS target_node_uuid,
+    e.created_at AS created_at
+"""
+        case _:
+            return """
+    e.uuid AS uuid,
+    e.group_id AS group_id,
+    n.uuid AS source_node_uuid,
+    m.uuid AS target_node_uuid,
+    e.created_at AS created_at,
+    properties(e) AS ep_properties
+"""
+
+
+# Kept for backward compatibility; prefer get_has_episode_edge_save_query().
 HAS_EPISODE_EDGE_SAVE = """
     MATCH (saga:Saga {uuid: $saga_uuid})
     MATCH (episode:Episodic {uuid: $episode_uuid})
@@ -294,6 +361,35 @@ HAS_EPISODE_EDGE_SAVE = """
     RETURN e.uuid AS uuid
 """
 
+
+def get_has_episode_edge_save_query(provider: GraphProvider) -> str:
+    """Save query for a HAS_EPISODE edge (Saga -> Episodic).
+
+    Non-Kuzu providers use ``$edge_data`` dict so that ``metadata_<key>``
+    properties are persisted.
+    """
+    match provider:
+        case GraphProvider.KUZU:
+            return """
+                MATCH (saga:Saga {uuid: $saga_uuid})
+                MATCH (episode:Episodic {uuid: $episode_uuid})
+                MERGE (saga)-[e:HAS_EPISODE {uuid: $uuid}]->(episode)
+                SET
+                    e.group_id = $group_id,
+                    e.created_at = $created_at
+                RETURN e.uuid AS uuid
+            """
+        case _:  # Neo4j, FalkorDB, Neptune
+            return """
+                MATCH (saga:Saga {uuid: $saga_uuid})
+                MATCH (episode:Episodic {uuid: $episode_uuid})
+                MERGE (saga)-[e:HAS_EPISODE {uuid: $edge_data.uuid}]->(episode)
+                SET e = $edge_data
+                RETURN e.uuid AS uuid
+            """
+
+
+# Kept for backward compatibility; prefer get_has_episode_edge_return_query().
 HAS_EPISODE_EDGE_RETURN = """
     e.uuid AS uuid,
     e.group_id AS group_id,
@@ -303,6 +399,29 @@ HAS_EPISODE_EDGE_RETURN = """
 """
 
 
+def get_has_episode_edge_return_query(provider: GraphProvider) -> str:
+    """Return fragment for a HAS_EPISODE edge."""
+    match provider:
+        case GraphProvider.KUZU:
+            return """
+    e.uuid AS uuid,
+    e.group_id AS group_id,
+    n.uuid AS source_node_uuid,
+    m.uuid AS target_node_uuid,
+    e.created_at AS created_at
+"""
+        case _:
+            return """
+    e.uuid AS uuid,
+    e.group_id AS group_id,
+    n.uuid AS source_node_uuid,
+    m.uuid AS target_node_uuid,
+    e.created_at AS created_at,
+    properties(e) AS ep_properties
+"""
+
+
+# Kept for backward compatibility; prefer get_next_episode_edge_save_query().
 NEXT_EPISODE_EDGE_SAVE = """
     MATCH (source_episode:Episodic {uuid: $source_episode_uuid})
     MATCH (target_episode:Episodic {uuid: $target_episode_uuid})
@@ -313,10 +432,61 @@ NEXT_EPISODE_EDGE_SAVE = """
     RETURN e.uuid AS uuid
 """
 
+
+def get_next_episode_edge_save_query(provider: GraphProvider) -> str:
+    """Save query for a NEXT_EPISODE edge (Episodic -> Episodic).
+
+    Non-Kuzu providers use ``$edge_data`` dict so that ``metadata_<key>``
+    properties are persisted.
+    """
+    match provider:
+        case GraphProvider.KUZU:
+            return """
+                MATCH (source_episode:Episodic {uuid: $source_episode_uuid})
+                MATCH (target_episode:Episodic {uuid: $target_episode_uuid})
+                MERGE (source_episode)-[e:NEXT_EPISODE {uuid: $uuid}]->(target_episode)
+                SET
+                    e.group_id = $group_id,
+                    e.created_at = $created_at
+                RETURN e.uuid AS uuid
+            """
+        case _:  # Neo4j, FalkorDB, Neptune
+            return """
+                MATCH (source_episode:Episodic {uuid: $source_episode_uuid})
+                MATCH (target_episode:Episodic {uuid: $target_episode_uuid})
+                MERGE (source_episode)-[e:NEXT_EPISODE {uuid: $edge_data.uuid}]->(target_episode)
+                SET e = $edge_data
+                RETURN e.uuid AS uuid
+            """
+
+
+# Kept for backward compatibility; prefer get_next_episode_edge_return_query().
 NEXT_EPISODE_EDGE_RETURN = """
     e.uuid AS uuid,
     e.group_id AS group_id,
     n.uuid AS source_node_uuid,
     m.uuid AS target_node_uuid,
     e.created_at AS created_at
+"""
+
+
+def get_next_episode_edge_return_query(provider: GraphProvider) -> str:
+    """Return fragment for a NEXT_EPISODE edge."""
+    match provider:
+        case GraphProvider.KUZU:
+            return """
+    e.uuid AS uuid,
+    e.group_id AS group_id,
+    n.uuid AS source_node_uuid,
+    m.uuid AS target_node_uuid,
+    e.created_at AS created_at
+"""
+        case _:
+            return """
+    e.uuid AS uuid,
+    e.group_id AS group_id,
+    n.uuid AS source_node_uuid,
+    m.uuid AS target_node_uuid,
+    e.created_at AS created_at,
+    properties(e) AS ep_properties
 """
