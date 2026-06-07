@@ -15,26 +15,25 @@ limitations under the License.
 """
 
 import logging
-from typing import Any
 
 from graphiti_core.driver.driver import GraphProvider
 from graphiti_core.driver.operations.saga_node_ops import SagaNodeOperations
-from graphiti_core.driver.query_executor import QueryExecutor, Transaction
+from graphiti_core.driver.query_executor import (
+    QueryExecutor,
+    Transaction,
+)
 from graphiti_core.errors import NodeNotFoundError
-from graphiti_core.helpers import parse_db_date
-from graphiti_core.models.nodes.node_db_queries import SAGA_NODE_RETURN, get_saga_node_save_query
-from graphiti_core.nodes import SagaNode
+from graphiti_core.models.nodes.node_db_queries import (
+    build_saga_save_data,
+    get_saga_node_return_query,
+    get_saga_node_save_query,
+)
+from graphiti_core.nodes import (
+    SagaNode,
+    get_saga_node_from_record,
+)
 
 logger = logging.getLogger(__name__)
-
-
-def _saga_node_from_record(record: Any) -> SagaNode:
-    return SagaNode(
-        uuid=record['uuid'],
-        name=record['name'],
-        group_id=record['group_id'],
-        created_at=parse_db_date(record['created_at']),  # type: ignore[arg-type]
-    )
 
 
 class FalkorSagaNodeOperations(SagaNodeOperations):
@@ -45,16 +44,22 @@ class FalkorSagaNodeOperations(SagaNodeOperations):
         tx: Transaction | None = None,
     ) -> None:
         query = get_saga_node_save_query(GraphProvider.FALKORDB)
-        params: dict[str, Any] = {
-            'uuid': node.uuid,
-            'name': node.name,
-            'group_id': node.group_id,
-            'created_at': node.created_at,
-        }
+        saga_data = build_saga_save_data(
+            uuid=node.uuid,
+            name=node.name,
+            group_id=node.group_id,
+            created_at=node.created_at,
+            summary=node.summary,
+            first_episode_uuid=node.first_episode_uuid,
+            last_episode_uuid=node.last_episode_uuid,
+            last_summarized_at=node.last_summarized_at,
+            last_summarized_episode_valid_at=node.last_summarized_episode_valid_at,
+            metadata=node.metadata,
+        )
         if tx is not None:
-            await tx.run(query, **params)
+            await tx.run(query, saga_data=saga_data)
         else:
-            await executor.execute_query(query, **params)
+            await executor.execute_query(query, saga_data=saga_data)
 
         logger.debug(f'Saved Saga Node to Graph: {node.uuid}')
 
@@ -128,10 +133,10 @@ class FalkorSagaNodeOperations(SagaNodeOperations):
             MATCH (s:Saga {uuid: $uuid})
             RETURN
             """
-            + SAGA_NODE_RETURN
+            + get_saga_node_return_query(GraphProvider.FALKORDB)
         )
         records, _, _ = await executor.execute_query(query, uuid=uuid)
-        nodes = [_saga_node_from_record(r) for r in records]
+        nodes = [get_saga_node_from_record(r) for r in records]
         if len(nodes) == 0:
             raise NodeNotFoundError(uuid)
         return nodes[0]
@@ -147,10 +152,10 @@ class FalkorSagaNodeOperations(SagaNodeOperations):
             WHERE s.uuid IN $uuids
             RETURN
             """
-            + SAGA_NODE_RETURN
+            + get_saga_node_return_query(GraphProvider.FALKORDB)
         )
         records, _, _ = await executor.execute_query(query, uuids=uuids)
-        return [_saga_node_from_record(r) for r in records]
+        return [get_saga_node_from_record(r) for r in records]
 
     async def get_by_group_ids(
         self,
@@ -170,7 +175,7 @@ class FalkorSagaNodeOperations(SagaNodeOperations):
             + """
             RETURN
             """
-            + SAGA_NODE_RETURN
+            + get_saga_node_return_query(GraphProvider.FALKORDB)
             + """
             ORDER BY s.uuid DESC
             """
@@ -182,4 +187,4 @@ class FalkorSagaNodeOperations(SagaNodeOperations):
             uuid=uuid_cursor,
             limit=limit,
         )
-        return [_saga_node_from_record(r) for r in records]
+        return [get_saga_node_from_record(r) for r in records]

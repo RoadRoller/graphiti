@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+from datetime import datetime
 from typing import Any
 
 from graphiti_core.driver.driver import GraphProvider
@@ -384,6 +385,38 @@ COMMUNITY_NODE_RETURN_NEPTUNE = """
 """
 
 
+def build_saga_save_data(
+        *,
+        uuid: str,
+        name: str,
+        group_id: str,
+        created_at: datetime,
+        summary: str = '',
+        first_episode_uuid: str | None = None,
+        last_episode_uuid: str | None = None,
+        last_summarized_at: datetime | None = None,
+        last_summarized_episode_valid_at: datetime | None = None,
+        metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build the property map used to persist a Saga node."""
+    saga_data: dict[str, Any] = {
+        'uuid': uuid,
+        'name': name,
+        'group_id': group_id,
+        'created_at': created_at,
+        'summary': summary,
+        'first_episode_uuid': first_episode_uuid,
+        'last_episode_uuid': last_episode_uuid,
+        'last_summarized_at': last_summarized_at,
+        'last_summarized_episode_valid_at': last_summarized_episode_valid_at,
+    }
+    for k, v in (metadata or {}).items():
+        metadata_key = f'metadata_{k}'
+        if metadata_key not in saga_data:
+            saga_data[metadata_key] = v
+    return saga_data
+
+
 def get_saga_node_save_query(provider: GraphProvider) -> str:
     match provider:
         case GraphProvider.KUZU:
@@ -401,10 +434,11 @@ def get_saga_node_save_query(provider: GraphProvider) -> str:
                 RETURN n.uuid AS uuid
             """
         case GraphProvider.NEO4J | GraphProvider.FALKORDB:
-            # Use dict approach to support dynamic metadata_ properties
+            # Use dict approach to support dynamic metadata_ properties.
+            # += merges properties so partial updates do not wipe existing metadata_* keys.
             return """
                 MERGE (n:Saga {uuid: $saga_data.uuid})
-                SET n = $saga_data
+                SET n += $saga_data
                 RETURN n.uuid AS uuid
             """
         case _:  # Neptune (and any future providers)

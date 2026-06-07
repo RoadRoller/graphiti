@@ -393,26 +393,22 @@ class Graphiti:
         SagaNode
             The existing or newly created saga node.
         """
-        from graphiti_core.helpers import parse_db_date
+        from graphiti_core.models.nodes.node_db_queries import get_saga_node_return_query
+        from graphiti_core.nodes import get_saga_node_from_record
 
         records, _, _ = await self.driver.execute_query(
             """
             MATCH (s:Saga {name: $name, group_id: $group_id})
-            RETURN s.uuid AS uuid, s.name AS name, s.group_id AS group_id, s.created_at AS created_at
-            """,
+            RETURN
+            """
+            + get_saga_node_return_query(self.driver.provider),
             name=saga_name,
             group_id=group_id,
             routing_='r',
         )
 
         if records:
-            record = records[0]
-            return SagaNode(
-                uuid=record['uuid'],
-                name=record['name'],
-                group_id=record['group_id'],
-                created_at=parse_db_date(record['created_at']),  # type: ignore
-            )
+            return get_saga_node_from_record(records[0])
 
         saga = SagaNode(name=saga_name, group_id=group_id, created_at=created_at, metadata=metadata)
         await saga.save(self.driver)
@@ -1463,6 +1459,8 @@ class Graphiti:
 
                 # Handle saga association if provided
                 if saga is not None:
+                    sorted_episodes = sorted(episodes, key=lambda e: e.valid_at)
+
                     # Get or create saga node based on input type
                     if isinstance(saga, str):
                         # Anchor a newly minted saga to the earliest episode
@@ -1478,9 +1476,6 @@ class Graphiti:
                         )
                     else:
                         saga_node = saga
-
-                    # Sort episodes by valid_at to create NEXT_EPISODE chain in correct order
-                    sorted_episodes = sorted(episodes, key=lambda e: e.valid_at)
 
                     # Find the most recent episode already in the saga
                     previous_episode_uuid = await self._saga_get_previous_episode_uuid(

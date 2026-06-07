@@ -6,23 +6,27 @@ HAS_EPISODE, and NEXT_EPISODE.
 """
 from __future__ import annotations
 
+import inspect
 import numpy as np
 import pytest
 from datetime import datetime
 from unittest.mock import Mock
 
+from graphiti_core.driver.neo4j.operations.saga_node_ops import Neo4jSagaNodeOperations
 from graphiti_core.edges import (
     CommunityEdge,
     EpisodicEdge,
     HasEpisodeEdge,
     NextEpisodeEdge,
 )
+from graphiti_core.models.nodes.node_db_queries import build_saga_save_data
 from graphiti_core.nodes import (
     CommunityNode,
     EntityNode,
     EpisodeType,
     EpisodicNode,
     SagaNode,
+    get_saga_node_from_record,
 )
 from graphiti_core.utils.bulk_utils import add_nodes_and_edges_bulk
 from graphiti_core.utils.maintenance.edge_operations import build_community_edges
@@ -40,6 +44,50 @@ SAMPLE_METADATA = {
     'artifact_id': 146,
     'message_id': 1790,
 }
+
+
+def test_build_saga_save_data_flattens_metadata():
+    now = datetime.now()
+    saga_data = build_saga_save_data(
+        uuid='saga-uuid',
+        name='test_saga',
+        group_id=group_id,
+        created_at=now,
+        metadata=SAMPLE_METADATA,
+    )
+
+    assert saga_data['metadata_agent_id'] == 1
+    assert saga_data['metadata_session_id'] == 241
+    assert saga_data['metadata_research_subject_id'] == 34
+
+
+def test_saga_node_from_record_parses_flat_metadata_from_saga_properties():
+    now = datetime.now()
+    record = {
+        'uuid': 'saga-uuid',
+        'name': 'test_saga',
+        'group_id': group_id,
+        'created_at': now,
+        'summary': '',
+        'first_episode_uuid': None,
+        'last_episode_uuid': None,
+        'last_summarized_at': None,
+        'last_summarized_episode_valid_at': None,
+        'saga_properties': {
+            'uuid': 'saga-uuid',
+            'metadata_agent_id': 1,
+            'metadata_session_id': 241,
+        },
+    }
+
+    node = get_saga_node_from_record(record)
+    assert node.metadata == {'agent_id': 1, 'session_id': 241}
+
+
+def test_neo4j_saga_node_ops_save_uses_build_saga_save_data():
+    source = inspect.getsource(Neo4jSagaNodeOperations.save)
+    assert 'build_saga_save_data' in source
+    assert 'saga_data=saga_data' in source
 
 
 def _make_embedder():

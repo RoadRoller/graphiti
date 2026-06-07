@@ -36,10 +36,14 @@ from graphiti_core.graph_queries import (
 from graphiti_core.models.edges.edge_db_queries import get_entity_edge_return_query
 from graphiti_core.models.nodes.node_db_queries import (
     COMMUNITY_NODE_RETURN,
-    EPISODIC_NODE_RETURN,
     get_entity_node_return_query,
+    get_episodic_node_return_query,
 )
-from graphiti_core.nodes import CommunityNode, EntityNode, EpisodicNode
+from graphiti_core.nodes import (
+    CommunityNode,
+    EntityNode,
+    EpisodicNode,
+)
 from graphiti_core.search.search_filters import (
     SearchFilters,
     edge_search_filter_query_constructor,
@@ -470,7 +474,7 @@ class FalkorSearchOperations(SearchOperations):
             + """
             RETURN
             """
-            + EPISODIC_NODE_RETURN
+            + get_episodic_node_return_query(GraphProvider.FALKORDB)
             + """
             ORDER BY score DESC
             LIMIT $limit

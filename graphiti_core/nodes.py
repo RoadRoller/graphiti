@@ -52,6 +52,7 @@ from graphiti_core.models.nodes.node_db_queries import (
     get_entity_node_save_query,
     get_episode_node_save_query,
     get_episodic_node_return_query,
+    build_saga_save_data,
     get_saga_node_return_query,
     get_saga_node_save_query,
 )
@@ -943,24 +944,23 @@ class SagaNode(Node):
             except NotImplementedError:
                 pass
 
-        if driver.provider in (GraphProvider.NEO4J, GraphProvider.FALKORDB):
-            # Build a dict and flatten metadata into metadata_* properties.
-            saga_data: dict[str, Any] = {
-                'uuid': self.uuid,
-                'name': self.name,
-                'group_id': self.group_id,
-                'created_at': self.created_at,
-                'summary': self.summary,
-                'first_episode_uuid': self.first_episode_uuid,
-                'last_episode_uuid': self.last_episode_uuid,
-                'last_summarized_at': self.last_summarized_at,
-                'last_summarized_episode_valid_at': self.last_summarized_episode_valid_at,
-            }
-            for k, v in (self.metadata or {}).items():
-                metadata_key = f'metadata_{k}'
-                if metadata_key not in saga_data:
-                    saga_data[metadata_key] = v
+        saga_node_ops = driver.saga_node_ops
+        if saga_node_ops is not None:
+            return await saga_node_ops.save(driver, self)
 
+        if driver.provider in (GraphProvider.NEO4J, GraphProvider.FALKORDB):
+            saga_data = build_saga_save_data(
+                uuid=self.uuid,
+                name=self.name,
+                group_id=self.group_id,
+                created_at=self.created_at,
+                summary=self.summary,
+                first_episode_uuid=self.first_episode_uuid,
+                last_episode_uuid=self.last_episode_uuid,
+                last_summarized_at=self.last_summarized_at,
+                last_summarized_episode_valid_at=self.last_summarized_episode_valid_at,
+                metadata=self.metadata,
+            )
             result = await driver.execute_query(
                 get_saga_node_save_query(driver.provider), saga_data=saga_data
             )
@@ -1010,6 +1010,10 @@ class SagaNode(Node):
             except NotImplementedError:
                 pass
 
+        saga_node_ops = driver.saga_node_ops
+        if saga_node_ops is not None:
+            return await saga_node_ops.get_by_uuid(driver, uuid)
+
         records, _, _ = await driver.execute_query(
             """
             MATCH (s:Saga {uuid: $uuid})
@@ -1036,6 +1040,10 @@ class SagaNode(Node):
                 )
             except NotImplementedError:
                 pass
+
+        saga_node_ops = driver.saga_node_ops
+        if saga_node_ops is not None:
+            return await saga_node_ops.get_by_uuids(driver, uuids)
 
         records, _, _ = await driver.execute_query(
             """
@@ -1067,6 +1075,10 @@ class SagaNode(Node):
                 )
             except NotImplementedError:
                 pass
+
+        saga_node_ops = driver.saga_node_ops
+        if saga_node_ops is not None:
+            return await saga_node_ops.get_by_group_ids(driver, group_ids, limit, uuid_cursor)
 
         cursor_query: LiteralString = 'AND s.uuid < $uuid' if uuid_cursor else ''
         limit_query: LiteralString = 'LIMIT $limit' if limit is not None else ''

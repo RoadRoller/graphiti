@@ -15,19 +15,21 @@ limitations under the License.
 """
 
 import logging
+import numpy as np
 from collections import defaultdict
+from numpy._typing import NDArray
 from time import time
 from typing import Any
-
-import numpy as np
-from numpy._typing import NDArray
 from typing_extensions import LiteralString
 
 from graphiti_core.driver.driver import (
     GraphDriver,
     GraphProvider,
 )
-from graphiti_core.edges import EntityEdge, get_entity_edge_from_record
+from graphiti_core.edges import (
+    EntityEdge,
+    get_entity_edge_from_record,
+)
 from graphiti_core.graph_queries import (
     get_nodes_query,
     get_relationships_query,
@@ -42,8 +44,8 @@ from graphiti_core.helpers import (
 from graphiti_core.models.edges.edge_db_queries import get_entity_edge_return_query
 from graphiti_core.models.nodes.node_db_queries import (
     COMMUNITY_NODE_RETURN,
-    EPISODIC_NODE_RETURN,
     get_entity_node_return_query,
+    get_episodic_node_return_query,
 )
 from graphiti_core.nodes import (
     CommunityNode,
@@ -913,24 +915,19 @@ async def episode_fulltext_search(
             for r in res['hits']['hits']:
                 input_ids.append({'id': r['_source']['uuid'], 'score': r['_score']})
 
-            # Match the edge ides and return the values
-            query = """
-                UNWIND $ids as i
-                MATCH (e:Episodic)
-                WHERE e.uuid=i.uuid
-            RETURN
-                    e.content AS content,
-                    e.created_at AS created_at,
-                    e.valid_at AS valid_at,
-                    e.uuid AS uuid,
-                    e.name AS name,
-                    e.group_id AS group_id,
-                    e.source_description AS source_description,
-                    e.source AS source,
-                    e.entity_edges AS entity_edges
+            query = (
+                    """
+                    UNWIND $ids as i
+                    MATCH (e:Episodic)
+                    WHERE e.uuid=i.id
+                    RETURN
+                    """
+                    + get_episodic_node_return_query(GraphProvider.NEPTUNE)
+                    + """
                 ORDER BY i.score DESC
                 LIMIT $limit
-            """
+                """
+            )
             records, _, _ = await driver.execute_query(
                 query,
                 ids=input_ids,
@@ -953,7 +950,7 @@ async def episode_fulltext_search(
             + """
             RETURN
             """
-            + EPISODIC_NODE_RETURN
+            + get_episodic_node_return_query(driver.provider)
             + """
             ORDER BY score DESC
             LIMIT $limit

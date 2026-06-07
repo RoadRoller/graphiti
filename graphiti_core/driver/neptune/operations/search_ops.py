@@ -17,7 +17,10 @@ limitations under the License.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import (
+    TYPE_CHECKING,
+    Any,
+)
 
 from graphiti_core.driver.driver import GraphProvider
 from graphiti_core.driver.operations.search_ops import SearchOperations
@@ -32,10 +35,14 @@ from graphiti_core.edges import EntityEdge
 from graphiti_core.models.edges.edge_db_queries import get_entity_edge_return_query
 from graphiti_core.models.nodes.node_db_queries import (
     COMMUNITY_NODE_RETURN_NEPTUNE,
-    EPISODIC_NODE_RETURN_NEPTUNE,
     get_entity_node_return_query,
+    get_episodic_node_return_query,
 )
-from graphiti_core.nodes import CommunityNode, EntityNode, EpisodicNode
+from graphiti_core.nodes import (
+    CommunityNode,
+    EntityNode,
+    EpisodicNode,
+)
 from graphiti_core.search.search_filters import (
     SearchFilters,
     edge_search_filter_query_constructor,
@@ -451,7 +458,7 @@ class NeptuneSearchOperations(SearchOperations):
             WHERE e.uuid=i.id
             RETURN
             """
-            + EPISODIC_NODE_RETURN_NEPTUNE
+            + get_episodic_node_return_query(GraphProvider.NEPTUNE)
             + """
             ORDER BY i.score DESC
             LIMIT $limit
