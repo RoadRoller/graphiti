@@ -69,6 +69,87 @@ class SearchFilters(BaseModel):
         return value
 
 
+def _episode_metadata_property_filter(
+        episode_alias: str,
+        key: str,
+        param_name: str,
+        provider: GraphProvider,
+) -> str:
+    if provider in (GraphProvider.KUZU, GraphProvider.NEPTUNE):
+        return f"json_extract({episode_alias}.episode_metadata, '$.{key}') = ${param_name}"
+    return f'{episode_alias}.metadata_{key} = ${param_name}'
+
+
+def _entity_metadata_property_filter(
+        entity_alias: str,
+        key: str,
+        param_name: str,
+        provider: GraphProvider,
+) -> str:
+    if provider == GraphProvider.KUZU:
+        return f"json_extract({entity_alias}.metadata, '$.{key}') = ${param_name}"
+    return f'{entity_alias}.metadata_{key} = ${param_name}'
+
+
+def _edge_episode_metadata_exists_filter(
+        key: str,
+        param_name: str,
+        provider: GraphProvider,
+) -> str:
+    episode_filter = _episode_metadata_property_filter('ep', key, param_name, provider)
+    if provider == GraphProvider.NEPTUNE:
+        unwind = "UNWIND split(coalesce(e.episodes, ''), ',') AS episode_uuid"
+    else:
+        unwind = 'UNWIND coalesce(e.episodes, []) AS episode_uuid'
+    return (
+        f'EXISTS {{ {unwind} '
+        f'MATCH (ep:Episodic {{uuid: episode_uuid}}) '
+        f'WHERE {episode_filter} }}'
+    )
+
+
+def _node_episode_metadata_exists_filter(
+        key: str,
+        param_name: str,
+        provider: GraphProvider,
+) -> str:
+    episode_filter = _episode_metadata_property_filter('ep', key, param_name, provider)
+    return f'EXISTS {{ MATCH (ep:Episodic)-[:MENTIONS]->(n) WHERE {episode_filter} }}'
+
+
+def _metadata_filter_with_episode_linkage(
+        entity_alias: str,
+        entity_type: str,
+        key: str,
+        param_name: str,
+        provider: GraphProvider,
+) -> str:
+    direct_filter = _entity_metadata_property_filter(entity_alias, key, param_name, provider)
+    if entity_type == 'edge':
+        episode_filter = _edge_episode_metadata_exists_filter(key, param_name, provider)
+    else:
+        episode_filter = _node_episode_metadata_exists_filter(key, param_name, provider)
+    return f'({direct_filter} OR {episode_filter})'
+
+
+def episode_search_filter_query_constructor(
+        filters: SearchFilters,
+        provider: GraphProvider,
+) -> tuple[list[str], dict[str, Any]]:
+    filter_queries: list[str] = []
+    filter_params: dict[str, Any] = {}
+
+    if filters.metadata is not None:
+        for idx, (key, value) in enumerate(filters.metadata.items()):
+            param_name = f'episode_metadata_value_{idx}'
+            filter_queries.append(
+                _episode_metadata_property_filter('e', key, param_name, provider)
+            )
+            filter_params[param_name] = value
+
+    return filter_queries, filter_params
+
+
 def cypher_to_opensearch_operator(op: ComparisonOperator) -> str:
     mapping = {
         ComparisonOperator.greater_than: 'gt',
@@ -100,10 +181,9 @@ def node_search_filter_query_constructor(
     if filters.metadata is not None:
         for idx, (key, value) in enumerate(filters.metadata.items()):
             param_name = f'node_metadata_value_{idx}'
-            if provider == GraphProvider.KUZU:
-                filter_queries.append(f"json_extract(n.metadata, '$.{key}') = ${param_name}")
-            else:
-                filter_queries.append(f'n.metadata_{key} = ${param_name}')
+            filter_queries.append(
+                _metadata_filter_with_episode_linkage('n', 'node', key, param_name, provider)
+            )
             filter_params[param_name] = value
 
     return filter_queries, filter_params
@@ -278,10 +358,9 @@ def edge_search_filter_query_constructor(
     if filters.metadata is not None:
         for idx, (key, value) in enumerate(filters.metadata.items()):
             param_name = f'edge_metadata_value_{idx}'
-            if provider == GraphProvider.KUZU:
-                filter_queries.append(f"json_extract(e.metadata, '$.{key}') = ${param_name}")
-            else:
-                filter_queries.append(f'e.metadata_{key} = ${param_name}')
+            filter_queries.append(
+                _metadata_filter_with_episode_linkage('e', 'edge', key, param_name, provider)
+            )
             filter_params[param_name] = value
 
     return filter_queries, filter_params

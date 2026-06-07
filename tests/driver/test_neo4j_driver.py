@@ -323,8 +323,8 @@ def test_node_metadata_filter_generates_prefixed_cypher():
     filters = SearchFilters(metadata={'agent_id': 42, 'session': 'abc'})
     queries, params = node_search_filter_query_constructor(filters, GraphProvider.NEO4J)
 
-    assert 'n.metadata_agent_id = $node_metadata_value_0' in queries
-    assert 'n.metadata_session = $node_metadata_value_1' in queries
+    assert any('n.metadata_agent_id = $node_metadata_value_0' in q for q in queries)
+    assert any('n.metadata_session = $node_metadata_value_1' in q for q in queries)
     assert params['node_metadata_value_0'] == 42
     assert params['node_metadata_value_1'] == 'abc'
 
@@ -334,8 +334,8 @@ def test_edge_metadata_filter_generates_prefixed_cypher():
     filters = SearchFilters(metadata={'run_id': 'xyz', 'score': 0.5})
     queries, params = edge_search_filter_query_constructor(filters, GraphProvider.NEO4J)
 
-    assert 'e.metadata_run_id = $edge_metadata_value_0' in queries
-    assert 'e.metadata_score = $edge_metadata_value_1' in queries
+    assert any('e.metadata_run_id = $edge_metadata_value_0' in q for q in queries)
+    assert any('e.metadata_score = $edge_metadata_value_1' in q for q in queries)
     assert params['edge_metadata_value_0'] == 'xyz'
     assert params['edge_metadata_value_1'] == 0.5
 

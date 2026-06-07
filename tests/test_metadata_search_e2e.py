@@ -19,10 +19,16 @@ from graphiti_core.edges import EntityEdge
 from graphiti_core.embedder.client import EmbedderClient
 from graphiti_core.graphiti import Graphiti
 from graphiti_core.llm_client import LLMClient
-from graphiti_core.nodes import EntityNode
+from graphiti_core.nodes import (
+    EntityNode,
+    EpisodeType,
+    EpisodicNode,
+)
+from graphiti_core.search.search_config_recipes import COMBINED_HYBRID_SEARCH_RRF
 from graphiti_core.search.search_filters import SearchFilters
 from graphiti_core.search.search_utils import (
     edge_fulltext_search,
+    episode_fulltext_search,
     node_fulltext_search,
 )
 from tests.helpers_test import (
@@ -289,3 +295,185 @@ async def test_graphiti_search_filters_edges_by_metadata(
     result_uuids = {edge.uuid for edge in all_results}
     assert edge_abc.uuid in result_uuids
     assert edge_xyz.uuid in result_uuids
+
+
+@pytest.mark.asyncio
+async def test_episode_fulltext_search_filters_by_metadata(
+        graph_driver, indices_built
+):
+    if graph_driver.provider == GraphProvider.KUZU:
+        pytest.skip('Skipping as fulltext indexing not supported for Kuzu')
+
+    now = datetime.now()
+    metadata = {'research_subject_id': 34, 'agent_id': 1}
+
+    episode = EpisodicNode(
+        name='scoped_episode',
+        group_id=group_id,
+        labels=[],
+        created_at=now,
+        source=EpisodeType.message,
+        source_description='metadata scope test',
+        content='unique scoped episode searchable content',
+        valid_at=now,
+        entity_edges=[],
+        episode_metadata=metadata,
+    )
+    await episode.save(graph_driver)
+
+    results = await episode_fulltext_search(
+        graph_driver,
+        'scoped episode searchable',
+        SearchFilters(metadata={'research_subject_id': 34}),
+        group_ids=[group_id],
+    )
+
+    assert len(results) == 1
+    assert results[0].uuid == episode.uuid
+
+
+@pytest.mark.asyncio
+async def test_episode_fulltext_search_with_non_matching_metadata_returns_empty(
+        graph_driver, indices_built
+):
+    if graph_driver.provider == GraphProvider.KUZU:
+        pytest.skip('Skipping as fulltext indexing not supported for Kuzu')
+
+    now = datetime.now()
+    episode = EpisodicNode(
+        name='unscoped_episode',
+        group_id=group_id,
+        labels=[],
+        created_at=now,
+        source=EpisodeType.message,
+        source_description='metadata scope test',
+        content='unique unscoped episode searchable content',
+        valid_at=now,
+        entity_edges=[],
+        episode_metadata={'research_subject_id': 34},
+    )
+    await episode.save(graph_driver)
+
+    results = await episode_fulltext_search(
+        graph_driver,
+        'unscoped episode searchable',
+        SearchFilters(metadata={'research_subject_id': 99}),
+        group_ids=[group_id],
+    )
+
+    assert results == []
+
+
+@pytest.mark.asyncio
+async def test_edge_fulltext_search_filters_by_linked_episode_metadata(
+        graph_driver, local_embedder, indices_built
+):
+    now = datetime.now()
+    episode = EpisodicNode(
+        name='edge_scope_episode',
+        group_id=group_id,
+        labels=[],
+        created_at=now,
+        source=EpisodeType.message,
+        source_description='edge episode linkage test',
+        content='edge scope episode content',
+        valid_at=now,
+        entity_edges=[],
+        episode_metadata={'research_subject_id': 34},
+    )
+    await episode.save(graph_driver)
+
+    source = EntityNode(
+        name='edge_scope_source',
+        group_id=group_id,
+        labels=['Entity'],
+        created_at=now,
+        summary='',
+    )
+    target = EntityNode(
+        name='edge_scope_target',
+        group_id=group_id,
+        labels=['Entity'],
+        created_at=now,
+        summary='',
+    )
+    for node in (source, target):
+        await node.generate_name_embedding(local_embedder)
+        await node.save(graph_driver)
+
+    edge = EntityEdge(
+        source_node_uuid=source.uuid,
+        target_node_uuid=target.uuid,
+        name='WORKS_AT',
+        fact='edge_scope_source works at edge_scope_target',
+        group_id=group_id,
+        created_at=now,
+        episodes=[episode.uuid],
+        metadata=None,
+    )
+    await edge.generate_embedding(local_embedder)
+    await edge.save(graph_driver)
+
+    results = await edge_fulltext_search(
+        graph_driver,
+        'works at',
+        SearchFilters(metadata={'research_subject_id': 34}),
+        group_ids=[group_id],
+    )
+
+    assert len(results) == 1
+    assert results[0].uuid == edge.uuid
+
+
+@pytest.mark.asyncio
+async def test_graphiti_search_with_metadata_scope_returns_empty_for_missing_scope(
+        graph_driver, local_embedder, graphiti_with_indices
+):
+    now = datetime.now()
+    episode = EpisodicNode(
+        name='combined_scope_episode',
+        group_id=group_id,
+        labels=[],
+        created_at=now,
+        source=EpisodeType.message,
+        source_description='combined search scope test',
+        content='combined scope searchable episode content',
+        valid_at=now,
+        entity_edges=[],
+        episode_metadata={'research_subject_id': 34},
+    )
+    await episode.save(graph_driver)
+
+    source = EntityNode(
+        name='combined_scope_source',
+        group_id=group_id,
+        labels=['Entity'],
+        created_at=now,
+        summary='combined scope researcher',
+    )
+    await source.generate_name_embedding(local_embedder)
+    await source.save(graph_driver)
+
+    edge = EntityEdge(
+        source_node_uuid=source.uuid,
+        target_node_uuid=source.uuid,
+        name='RELATED_TO',
+        fact='combined scope source self relation',
+        group_id=group_id,
+        created_at=now,
+        episodes=[episode.uuid],
+        metadata=None,
+    )
+    await edge.generate_embedding(local_embedder)
+    await edge.save(graph_driver)
+
+    search_results = await graphiti_with_indices.search_(
+        query='combined scope',
+        group_ids=[group_id],
+        config=COMBINED_HYBRID_SEARCH_RRF,
+        search_filter=SearchFilters(metadata={'research_subject_id': 99}),
+    )
+
+    assert search_results.episodes == []
+    assert search_results.edges == []
+    assert search_results.nodes == []

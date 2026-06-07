@@ -47,6 +47,7 @@ from graphiti_core.nodes import (
 from graphiti_core.search.search_filters import (
     SearchFilters,
     edge_search_filter_query_constructor,
+    episode_search_filter_query_constructor,
     node_search_filter_query_constructor,
 )
 
@@ -447,7 +448,7 @@ class FalkorSearchOperations(SearchOperations):
         self,
         executor: QueryExecutor,
         query: str,
-        search_filter: SearchFilters,  # noqa: ARG002
+            search_filter: SearchFilters,
         group_ids: list[str] | None = None,
         limit: int = 10,
     ) -> list[EpisodicNode]:
@@ -455,11 +456,16 @@ class FalkorSearchOperations(SearchOperations):
         if fuzzy_query == '':
             return []
 
-        filter_params: dict[str, Any] = {}
-        group_filter_query = ''
+        filter_queries, filter_params = episode_search_filter_query_constructor(
+            search_filter, GraphProvider.FALKORDB
+        )
         if group_ids is not None:
-            group_filter_query += '\nAND e.group_id IN $group_ids'
+            filter_queries.append('e.group_id IN $group_ids')
             filter_params['group_ids'] = group_ids
+
+        metadata_filter_query = ''
+        if filter_queries:
+            metadata_filter_query = '\nAND ' + ' AND '.join(filter_queries)
 
         cypher = (
             get_nodes_query(
@@ -470,7 +476,7 @@ class FalkorSearchOperations(SearchOperations):
             MATCH (e:Episodic)
             WHERE e.uuid = episode.uuid
             """
-            + group_filter_query
+            + metadata_filter_query
             + """
             RETURN
             """

@@ -9,6 +9,7 @@ from graphiti_core.driver.driver import GraphProvider
 from graphiti_core.search.search_filters import (
     SearchFilters,
     edge_search_filter_query_constructor,
+    episode_search_filter_query_constructor,
     node_search_filter_query_constructor,
 )
 
@@ -55,7 +56,10 @@ def test_node_filter_single_metadata_neo4j():
     filters = SearchFilters(metadata={'agent_id': 42})
     queries, params = node_search_filter_query_constructor(filters, GraphProvider.NEO4J)
 
-    assert queries == ['n.metadata_agent_id = $node_metadata_value_0']
+    assert len(queries) == 1
+    assert 'n.metadata_agent_id = $node_metadata_value_0' in queries[0]
+    assert 'EXISTS' in queries[0]
+    assert 'MENTIONS' in queries[0]
     assert params == {'node_metadata_value_0': 42}
 
 
@@ -64,8 +68,8 @@ def test_node_filter_multiple_metadata_neo4j():
     queries, params = node_search_filter_query_constructor(filters, GraphProvider.NEO4J)
 
     assert len(queries) == 2
-    assert 'n.metadata_agent_id = $node_metadata_value_0' in queries
-    assert 'n.metadata_research_subject_id = $node_metadata_value_1' in queries
+    assert 'n.metadata_agent_id = $node_metadata_value_0' in queries[0]
+    assert 'n.metadata_research_subject_id = $node_metadata_value_1' in queries[1]
     assert params['node_metadata_value_0'] == 42
     assert params['node_metadata_value_1'] == 123
 
@@ -74,7 +78,8 @@ def test_node_filter_metadata_string_value_neo4j():
     filters = SearchFilters(metadata={'session_id': 'abc123'})
     queries, params = node_search_filter_query_constructor(filters, GraphProvider.NEO4J)
 
-    assert queries == ['n.metadata_session_id = $node_metadata_value_0']
+    assert len(queries) == 1
+    assert 'n.metadata_session_id = $node_metadata_value_0' in queries[0]
     assert params == {'node_metadata_value_0': 'abc123'}
 
 
@@ -82,7 +87,8 @@ def test_node_filter_metadata_float_value_neo4j():
     filters = SearchFilters(metadata={'score': 0.95})
     queries, params = node_search_filter_query_constructor(filters, GraphProvider.NEO4J)
 
-    assert queries == ['n.metadata_score = $node_metadata_value_0']
+    assert len(queries) == 1
+    assert 'n.metadata_score = $node_metadata_value_0' in queries[0]
     assert params == {'node_metadata_value_0': 0.95}
 
 
@@ -91,7 +97,8 @@ def test_node_filter_single_metadata_kuzu():
     queries, params = node_search_filter_query_constructor(filters, GraphProvider.KUZU)
 
     assert len(queries) == 1
-    assert "json_extract(n.metadata, '$.agent_id') = $node_metadata_value_0" in queries
+    assert "json_extract(n.metadata, '$.agent_id') = $node_metadata_value_0" in queries[0]
+    assert 'EXISTS' in queries[0]
     assert params == {'node_metadata_value_0': 42}
 
 
@@ -100,7 +107,7 @@ def test_node_filter_metadata_combined_with_node_labels_neo4j():
     queries, params = node_search_filter_query_constructor(filters, GraphProvider.NEO4J)
 
     assert 'n:Person' in queries
-    assert 'n.metadata_agent_id = $node_metadata_value_0' in queries
+    assert any('n.metadata_agent_id = $node_metadata_value_0' in q for q in queries)
     assert len(queries) == 2
     assert params['node_metadata_value_0'] == 42
 
@@ -131,7 +138,10 @@ def test_edge_filter_single_metadata_neo4j():
     filters = SearchFilters(metadata={'agent_id': 42})
     queries, params = edge_search_filter_query_constructor(filters, GraphProvider.NEO4J)
 
-    assert queries == ['e.metadata_agent_id = $edge_metadata_value_0']
+    assert len(queries) == 1
+    assert 'e.metadata_agent_id = $edge_metadata_value_0' in queries[0]
+    assert 'EXISTS' in queries[0]
+    assert 'Episodic' in queries[0]
     assert params == {'edge_metadata_value_0': 42}
 
 
@@ -140,8 +150,8 @@ def test_edge_filter_multiple_metadata_neo4j():
     queries, params = edge_search_filter_query_constructor(filters, GraphProvider.NEO4J)
 
     assert len(queries) == 2
-    assert 'e.metadata_agent_id = $edge_metadata_value_0' in queries
-    assert 'e.metadata_session_id = $edge_metadata_value_1' in queries
+    assert 'e.metadata_agent_id = $edge_metadata_value_0' in queries[0]
+    assert 'e.metadata_session_id = $edge_metadata_value_1' in queries[1]
     assert params['edge_metadata_value_0'] == 42
     assert params['edge_metadata_value_1'] == 'xyz'
 
@@ -151,7 +161,8 @@ def test_edge_filter_metadata_kuzu():
     queries, params = edge_search_filter_query_constructor(filters, GraphProvider.KUZU)
 
     assert len(queries) == 1
-    assert "json_extract(e.metadata, '$.agent_id') = $edge_metadata_value_0" in queries
+    assert "json_extract(e.metadata, '$.agent_id') = $edge_metadata_value_0" in queries[0]
+    assert 'EXISTS' in queries[0]
     assert params == {'edge_metadata_value_0': 7}
 
 
@@ -160,7 +171,7 @@ def test_edge_filter_metadata_combined_with_edge_types():
     queries, params = edge_search_filter_query_constructor(filters, GraphProvider.NEO4J)
 
     assert 'e.name in $edge_types' in queries
-    assert 'e.metadata_agent_id = $edge_metadata_value_0' in queries
+    assert any('e.metadata_agent_id = $edge_metadata_value_0' in q for q in queries)
     assert params['edge_types'] == ['WORKS_AT']
     assert params['edge_metadata_value_0'] == 1
 
@@ -196,3 +207,45 @@ def test_node_and_edge_metadata_params_do_not_collide():
     assert set(node_params.keys()).isdisjoint(set(edge_params.keys()))
     assert 'node_metadata_value_0' in node_params
     assert 'edge_metadata_value_0' in edge_params
+
+
+# ---------------------------------------------------------------------------
+# episode_search_filter_query_constructor – metadata
+# ---------------------------------------------------------------------------
+
+
+def test_episode_filter_single_metadata_neo4j():
+    filters = SearchFilters(metadata={'research_subject_id': 34})
+    queries, params = episode_search_filter_query_constructor(filters, GraphProvider.NEO4J)
+
+    assert queries == ['e.metadata_research_subject_id = $episode_metadata_value_0']
+    assert params == {'episode_metadata_value_0': 34}
+
+
+def test_episode_filter_multiple_metadata_neo4j():
+    filters = SearchFilters(metadata={'agent_id': 1, 'research_subject_id': 34})
+    queries, params = episode_search_filter_query_constructor(filters, GraphProvider.NEO4J)
+
+    assert len(queries) == 2
+    assert 'e.metadata_agent_id = $episode_metadata_value_0' in queries
+    assert 'e.metadata_research_subject_id = $episode_metadata_value_1' in queries
+
+
+def test_episode_filter_single_metadata_kuzu():
+    filters = SearchFilters(metadata={'research_subject_id': 34})
+    queries, params = episode_search_filter_query_constructor(filters, GraphProvider.KUZU)
+
+    assert len(queries) == 1
+    assert (
+            "json_extract(e.episode_metadata, '$.research_subject_id') = $episode_metadata_value_0"
+            in queries[0]
+    )
+    assert params == {'episode_metadata_value_0': 34}
+
+
+def test_episode_filter_empty_metadata_no_extra_queries():
+    filters = SearchFilters(metadata={})
+    queries, params = episode_search_filter_query_constructor(filters, GraphProvider.NEO4J)
+
+    assert queries == []
+    assert params == {}
