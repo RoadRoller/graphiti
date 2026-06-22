@@ -18,11 +18,13 @@ from .client import LLMClient
 from .config import LLMConfig
 from .errors import RateLimitError
 from .openai_client import OpenAIClient
+from .openai_json_object_client import OpenAIJsonObjectClient
 from .token_tracker import TokenUsage, TokenUsageTracker
 
 __all__ = [
     'LLMClient',
     'OpenAIClient',
+    'OpenAIJsonObjectClient',
     'LLMConfig',
     'RateLimitError',
     'TokenUsage',
