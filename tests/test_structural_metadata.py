@@ -4,6 +4,7 @@ Tests for metadata on structural nodes and edges.
 Covers SagaNode and edge types that are not EntityEdge: MENTIONS (EpisodicEdge),
 HAS_EPISODE, and NEXT_EPISODE.
 """
+
 from __future__ import annotations
 
 import inspect

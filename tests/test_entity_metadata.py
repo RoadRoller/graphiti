@@ -2,6 +2,7 @@
 Tests for Phase 2: metadata field on EntityNode and EntityEdge.
 Covers storage, retrieval, and propagation from episode metadata.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -30,6 +31,7 @@ pytest_plugins = ('pytest_asyncio',)
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_embedder():
     mock = Mock()
@@ -334,8 +336,8 @@ async def test_create_entity_nodes_inherits_episode_metadata():
         EpisodeType,
         EpisodicNode,
     )
-    from graphiti_core.utils.maintenance.node_operations import _create_entity_nodes
     from graphiti_core.prompts.extract_nodes import ExtractedEntity
+    from graphiti_core.utils.maintenance.node_operations import _create_entity_nodes
 
     now = datetime.now()
     episode_meta = {'agent_id': 55, 'subject': 'test'}

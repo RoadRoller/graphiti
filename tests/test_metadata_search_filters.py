@@ -1,6 +1,7 @@
 """
 Tests for Phase 3: metadata filtering in SearchFilters and query constructors.
 """
+
 from __future__ import annotations
 
 import pytest

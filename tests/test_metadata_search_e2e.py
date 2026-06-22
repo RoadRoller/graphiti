@@ -4,6 +4,7 @@ End-to-end database tests for search with metadata filtering.
 Exercises the full search pipeline (index lookup + Cypher filter) against a
 real graph driver, not just query constructor unit tests.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -298,9 +299,7 @@ async def test_graphiti_search_filters_edges_by_metadata(
 
 
 @pytest.mark.asyncio
-async def test_episode_fulltext_search_filters_by_metadata(
-        graph_driver, indices_built
-):
+async def test_episode_fulltext_search_filters_by_metadata(graph_driver, indices_built):
     if graph_driver.provider == GraphProvider.KUZU:
         pytest.skip('Skipping as fulltext indexing not supported for Kuzu')
 

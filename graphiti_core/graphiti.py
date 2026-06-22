@@ -1409,9 +1409,7 @@ class Graphiti:
                         ep.uuid: ep.episode_metadata for ep in episodes
                     }
                     episodic_edges.extend(
-                        build_episodic_edges(
-                            nodes, episode_uuid, now, metadata_by_uuid=ep_meta_map
-                        )
+                        build_episodic_edges(nodes, episode_uuid, now, metadata_by_uuid=ep_meta_map)
                     )
 
                 # Re-map edge pointers and dedupe edges

@@ -128,13 +128,10 @@ class FalkorSagaNodeOperations(SagaNodeOperations):
         executor: QueryExecutor,
         uuid: str,
     ) -> SagaNode:
-        query = (
-            """
+        query = """
             MATCH (s:Saga {uuid: $uuid})
             RETURN
-            """
-            + get_saga_node_return_query(GraphProvider.FALKORDB)
-        )
+            """ + get_saga_node_return_query(GraphProvider.FALKORDB)
         records, _, _ = await executor.execute_query(query, uuid=uuid)
         nodes = [get_saga_node_from_record(r) for r in records]
         if len(nodes) == 0:
@@ -146,14 +143,11 @@ class FalkorSagaNodeOperations(SagaNodeOperations):
         executor: QueryExecutor,
         uuids: list[str],
     ) -> list[SagaNode]:
-        query = (
-            """
+        query = """
             MATCH (s:Saga)
             WHERE s.uuid IN $uuids
             RETURN
-            """
-            + get_saga_node_return_query(GraphProvider.FALKORDB)
-        )
+            """ + get_saga_node_return_query(GraphProvider.FALKORDB)
         records, _, _ = await executor.execute_query(query, uuids=uuids)
         return [get_saga_node_from_record(r) for r in records]
 

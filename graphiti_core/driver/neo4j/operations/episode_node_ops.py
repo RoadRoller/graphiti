@@ -162,13 +162,10 @@ class Neo4jEpisodeNodeOperations(EpisodeNodeOperations):
         executor: QueryExecutor,
         uuid: str,
     ) -> EpisodicNode:
-        query = (
-            """
+        query = """
             MATCH (e:Episodic {uuid: $uuid})
             RETURN
-            """
-            + get_episodic_node_return_query(GraphProvider.NEO4J)
-        )
+            """ + get_episodic_node_return_query(GraphProvider.NEO4J)
         records, _, _ = await executor.execute_query(query, uuid=uuid, routing_='r')
         episodes = [episodic_node_from_record(r) for r in records]
         if len(episodes) == 0:
@@ -180,14 +177,11 @@ class Neo4jEpisodeNodeOperations(EpisodeNodeOperations):
         executor: QueryExecutor,
         uuids: list[str],
     ) -> list[EpisodicNode]:
-        query = (
-            """
+        query = """
             MATCH (e:Episodic)
             WHERE e.uuid IN $uuids
             RETURN DISTINCT
-            """
-            + get_episodic_node_return_query(GraphProvider.NEO4J)
-        )
+            """ + get_episodic_node_return_query(GraphProvider.NEO4J)
         records, _, _ = await executor.execute_query(query, uuids=uuids, routing_='r')
         return [episodic_node_from_record(r) for r in records]
 
@@ -229,13 +223,10 @@ class Neo4jEpisodeNodeOperations(EpisodeNodeOperations):
         executor: QueryExecutor,
         entity_node_uuid: str,
     ) -> list[EpisodicNode]:
-        query = (
-            """
+        query = """
             MATCH (e:Episodic)-[r:MENTIONS]->(n:Entity {uuid: $entity_node_uuid})
             RETURN DISTINCT
-            """
-            + get_episodic_node_return_query(GraphProvider.NEO4J)
-        )
+            """ + get_episodic_node_return_query(GraphProvider.NEO4J)
         records, _, _ = await executor.execute_query(
             query, entity_node_uuid=entity_node_uuid, routing_='r'
         )

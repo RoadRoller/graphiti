@@ -47,12 +47,12 @@ from graphiti_core.helpers import (
 from graphiti_core.models.nodes.node_db_queries import (
     COMMUNITY_NODE_RETURN,
     COMMUNITY_NODE_RETURN_NEPTUNE,
+    build_saga_save_data,
     get_community_node_save_query,
     get_entity_node_return_query,
     get_entity_node_save_query,
     get_episode_node_save_query,
     get_episodic_node_return_query,
-    build_saga_save_data,
     get_saga_node_return_query,
     get_saga_node_save_query,
 )
@@ -73,6 +73,7 @@ def _parse_episode_metadata(raw: Any) -> dict[str, Any] | None:
             return None
         return parsed if isinstance(parsed, dict) else None
     return None
+
 
 logger = logging.getLogger(__name__)
 
@@ -418,9 +419,7 @@ class EpisodicNode(Node):
                 'valid_at': self.valid_at,
                 'source': self.source.value,
                 'episode_metadata': (
-                    json.dumps(self.metadata, default=str)
-                    if self.metadata is not None
-                    else None
+                    json.dumps(self.metadata, default=str) if self.metadata is not None else None
                 ),
             }
             result = await driver.execute_query(

@@ -133,13 +133,10 @@ class Neo4jSagaNodeOperations(SagaNodeOperations):
         executor: QueryExecutor,
         uuid: str,
     ) -> SagaNode:
-        query = (
-            """
+        query = """
             MATCH (s:Saga {uuid: $uuid})
             RETURN
-            """
-            + get_saga_node_return_query(GraphProvider.NEO4J)
-        )
+            """ + get_saga_node_return_query(GraphProvider.NEO4J)
         records, _, _ = await executor.execute_query(query, uuid=uuid, routing_='r')
         nodes = [get_saga_node_from_record(r) for r in records]
         if len(nodes) == 0:
@@ -151,14 +148,11 @@ class Neo4jSagaNodeOperations(SagaNodeOperations):
         executor: QueryExecutor,
         uuids: list[str],
     ) -> list[SagaNode]:
-        query = (
-            """
+        query = """
             MATCH (s:Saga)
             WHERE s.uuid IN $uuids
             RETURN
-            """
-            + get_saga_node_return_query(GraphProvider.NEO4J)
-        )
+            """ + get_saga_node_return_query(GraphProvider.NEO4J)
         records, _, _ = await executor.execute_query(query, uuids=uuids, routing_='r')
         return [get_saga_node_from_record(r) for r in records]
 

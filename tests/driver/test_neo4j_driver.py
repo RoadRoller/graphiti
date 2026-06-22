@@ -137,9 +137,7 @@ async def test_entity_node_no_metadata_no_prefix_properties(neo4j_driver):
     props: dict = records[0]['props']
 
     metadata_props = [k for k in props if k.startswith('metadata_')]
-    assert metadata_props == [], (
-        f'Expected no metadata_ properties but found: {metadata_props}'
-    )
+    assert metadata_props == [], f'Expected no metadata_ properties but found: {metadata_props}'
 
 
 @pytest.mark.asyncio

@@ -105,13 +105,10 @@ class Neo4jCommunityEdgeOperations(CommunityEdgeOperations):
         executor: QueryExecutor,
         uuid: str,
     ) -> CommunityEdge:
-        query = (
-            """
+        query = """
             MATCH (n:Community)-[e:HAS_MEMBER {uuid: $uuid}]->(m)
             RETURN
-            """
-            + get_community_edge_return_query(GraphProvider.NEO4J)
-        )
+            """ + get_community_edge_return_query(GraphProvider.NEO4J)
         records, _, _ = await executor.execute_query(query, uuid=uuid, routing_='r')
         edges = [get_community_edge_from_record(r) for r in records]
         if len(edges) == 0:
@@ -123,14 +120,11 @@ class Neo4jCommunityEdgeOperations(CommunityEdgeOperations):
         executor: QueryExecutor,
         uuids: list[str],
     ) -> list[CommunityEdge]:
-        query = (
-            """
+        query = """
             MATCH (n:Community)-[e:HAS_MEMBER]->(m)
             WHERE e.uuid IN $uuids
             RETURN
-            """
-            + get_community_edge_return_query(GraphProvider.NEO4J)
-        )
+            """ + get_community_edge_return_query(GraphProvider.NEO4J)
         records, _, _ = await executor.execute_query(query, uuids=uuids, routing_='r')
         return [get_community_edge_from_record(r) for r in records]
 

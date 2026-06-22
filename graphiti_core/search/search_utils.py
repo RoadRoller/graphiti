@@ -923,10 +923,10 @@ async def episode_fulltext_search(
 
             query = (
                     """
-                    UNWIND $ids as i
-                    MATCH (e:Episodic)
-                    WHERE e.uuid=i.id
-                    """
+                        UNWIND $ids as i
+                        MATCH (e:Episodic)
+                        WHERE e.uuid=i.id
+                        """
                     + metadata_filter_query
                     + """
                     RETURN

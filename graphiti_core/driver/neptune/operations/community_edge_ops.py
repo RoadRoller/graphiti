@@ -105,13 +105,10 @@ class NeptuneCommunityEdgeOperations(CommunityEdgeOperations):
         executor: QueryExecutor,
         uuid: str,
     ) -> CommunityEdge:
-        query = (
-            """
+        query = """
             MATCH (n:Community)-[e:HAS_MEMBER {uuid: $uuid}]->(m)
             RETURN
-            """
-            + get_community_edge_return_query(GraphProvider.NEPTUNE)
-        )
+            """ + get_community_edge_return_query(GraphProvider.NEPTUNE)
         records, _, _ = await executor.execute_query(query, uuid=uuid)
         edges = [get_community_edge_from_record(r) for r in records]
         if len(edges) == 0:
@@ -123,14 +120,11 @@ class NeptuneCommunityEdgeOperations(CommunityEdgeOperations):
         executor: QueryExecutor,
         uuids: list[str],
     ) -> list[CommunityEdge]:
-        query = (
-            """
+        query = """
             MATCH (n:Community)-[e:HAS_MEMBER]->(m)
             WHERE e.uuid IN $uuids
             RETURN
-            """
-            + get_community_edge_return_query(GraphProvider.NEPTUNE)
-        )
+            """ + get_community_edge_return_query(GraphProvider.NEPTUNE)
         records, _, _ = await executor.execute_query(query, uuids=uuids)
         return [get_community_edge_from_record(r) for r in records]
 

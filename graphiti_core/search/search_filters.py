@@ -102,9 +102,7 @@ def _edge_episode_metadata_exists_filter(
     else:
         unwind = 'UNWIND coalesce(e.episodes, []) AS episode_uuid'
     return (
-        f'EXISTS {{ {unwind} '
-        f'MATCH (ep:Episodic {{uuid: episode_uuid}}) '
-        f'WHERE {episode_filter} }}'
+        f'EXISTS {{ {unwind} MATCH (ep:Episodic {{uuid: episode_uuid}}) WHERE {episode_filter} }}'
     )
 
 
@@ -142,9 +140,7 @@ def episode_search_filter_query_constructor(
     if filters.metadata is not None:
         for idx, (key, value) in enumerate(filters.metadata.items()):
             param_name = f'episode_metadata_value_{idx}'
-            filter_queries.append(
-                _episode_metadata_property_filter('e', key, param_name, provider)
-            )
+            filter_queries.append(_episode_metadata_property_filter('e', key, param_name, provider))
             filter_params[param_name] = value
 
     return filter_queries, filter_params
