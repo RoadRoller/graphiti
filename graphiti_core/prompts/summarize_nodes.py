@@ -14,15 +14,28 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from typing import Any, Protocol, TypedDict
-
-from pydantic import BaseModel, Field
+from pydantic import (
+    BaseModel,
+    Field,
+)
+from typing import (
+    Any,
+    Protocol,
+    TypedDict,
+)
 
 from graphiti_core.utils.text_utils import MAX_SUMMARY_CHARS
-
-from .models import Message, PromptFunction, PromptVersion
+from .models import (
+    Message,
+    PromptFunction,
+    PromptVersion,
+)
 from .prompt_helpers import to_prompt_json
-from .snippets import summary_instructions
+from .snippets import (
+    attribute_hard_rules_summarize_context,
+    summarize_pair_instructions,
+    summary_instructions,
+)
 
 
 class Summary(BaseModel):
@@ -60,58 +73,59 @@ def summarize_pair(context: dict[str, Any]) -> list[Message]:
         Message(
             role='user',
             content=f"""
-        Synthesize the information from the following two summaries into a single information-dense summary.
+Synthesize the information from the following two summaries into a single information-dense summary.
 
-        IMPORTANT:
-        - Preserve all materially relevant names, roles, places, dates, counts, and changes over time that are explicitly supported.
-        - Prefer compact factual sentences over vague thematic phrasing.
-        - When the durable fact is the content of what was said, state the content directly instead of narrating that it was said.
-        - Use communication verbs only when the act of speaking, asking, sharing, presenting, or announcing is itself the important fact.
-        - Avoid filler verbs like "mentioned", "described", "stated", "reported", "noted", "discussed", "referenced", and "indicated" unless the communication act itself matters.
-        - SUMMARIES MUST BE LESS THAN {MAX_SUMMARY_CHARS} CHARACTERS.
+{summarize_pair_instructions}
 
-        Summaries:
-        {to_prompt_json(context['node_summaries'])}
-        """,
+Summaries:
+{to_prompt_json(context['node_summaries'])}
+""",
         ),
     ]
 
 
 def summarize_context(context: dict[str, Any]) -> list[Message]:
+    # Deprecated: not used in production. Use extract_summaries_batch instead.
     return [
         Message(
             role='system',
-            content='You are a helpful assistant that generates detailed, information-dense summaries and attributes from provided text.',
+            content=(
+                'You are an entity summary and attribute extraction specialist. '
+                'You ONLY emit values explicitly supported by MESSAGES. '
+                'Output strictly the JSON specified by the response schema — no reasoning in any field.'
+            ),
         ),
         Message(
             role='user',
             content=f"""
-        Given the MESSAGES and the ENTITY name, create a summary for the ENTITY. Your summary must only use
-        information from the provided MESSAGES. Your summary should also only contain information relevant to the
-        provided ENTITY.
+Given the MESSAGES and the ENTITY name, create a summary for the ENTITY. Your summary must only use
+information from the provided MESSAGES. Your summary should also only contain information relevant to the
+provided ENTITY.
 
-        In addition, extract any values for the provided entity properties based on their descriptions.
-        If the value of the entity property cannot be found in the current context, set the value of the property to the Python value None.
+In addition, extract any values for the provided entity properties based on their descriptions.
+If the value of the entity property cannot be found in the current context, set the value of the property to the Python value None.
 
-        {summary_instructions}
+{summary_instructions}
 
-        <MESSAGES>
-        {to_prompt_json(context['previous_episodes'])}
-        {to_prompt_json(context['episode_content'])}
-        </MESSAGES>
+{attribute_hard_rules_summarize_context}
 
-        <ENTITY>
-        {context['node_name']}
-        </ENTITY>
+<MESSAGES>
+{to_prompt_json(context['previous_episodes'])}
+{to_prompt_json(context['episode_content'])}
+</MESSAGES>
 
-        <ENTITY CONTEXT>
-        {context['node_summary']}
-        </ENTITY CONTEXT>
+<ENTITY>
+{context['node_name']}
+</ENTITY>
 
-        <ATTRIBUTES>
-        {to_prompt_json(context['attributes'])}
-        </ATTRIBUTES>
-        """,
+<ENTITY_CONTEXT>
+{context['node_summary']}
+</ENTITY_CONTEXT>
+
+<ATTRIBUTES>
+{to_prompt_json(context['attributes'])}
+</ATTRIBUTES>
+""",
         ),
     ]
 
@@ -125,12 +139,12 @@ def summary_description(context: dict[str, Any]) -> list[Message]:
         Message(
             role='user',
             content=f"""
-        Create a short one sentence description of the summary that explains what kind of information is summarized.
-        Summaries must be under {MAX_SUMMARY_CHARS} characters.
+Create a short one sentence description of the summary that explains what kind of information is summarized.
+Summaries must be under {MAX_SUMMARY_CHARS} characters.
 
-        Summary:
-        {to_prompt_json(context['summary'])}
-        """,
+Summary:
+{to_prompt_json(context['summary'])}
+""",
         ),
     ]
 

@@ -12,14 +12,33 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
+
+Combined node+edge extraction uses a liberal extraction philosophy optimized for AI agent
+memory and retrieval. Standalone extract_nodes + extract_edges uses a more conservative
+entity policy ("when in doubt, do NOT extract") suited for structured knowledge graphs.
+See graphiti_core.prompts.lib for pipeline selection guidance.
 """
 
-from typing import Any, Protocol, TypedDict
+from pydantic import (
+    BaseModel,
+    Field,
+)
+from typing import (
+    Any,
+    Protocol,
+    TypedDict,
+)
 
-from pydantic import BaseModel, Field
-
-from .models import Message, PromptFunction, PromptVersion
+from .models import (
+    Message,
+    PromptFunction,
+    PromptVersion,
+)
 from .prompt_helpers import to_prompt_json
+from .snippets import (
+    combined_negative_examples,
+    output_discipline,
+)
 
 
 class CombinedEntity(BaseModel):
@@ -89,6 +108,11 @@ RELATION TYPE RULES:
 
 
 def extract_message(context: dict[str, Any]) -> list[Message]:
+    include_extended = context.get('include_extended_examples') or context.get(
+        'custom_extraction_instructions'
+    )
+    negative_examples_section = combined_negative_examples if include_extended else ''
+
     sys_prompt = (
         'You are an expert knowledge graph extraction specialist for an AI agent memory system. '
         'You extract both entity nodes and relationship facts from conversations in a single pass. '
@@ -99,7 +123,7 @@ def extract_message(context: dict[str, Any]) -> list[Message]:
 
     user_prompt = f"""
 ENTITY RULES:
-1. Extract speakers and named entities explicitly mentioned in CURRENT MESSAGES.
+1. Extract speakers and named entities explicitly mentioned in CURRENT_MESSAGES.
 2. Entity names must be at most 5 words. Use the most specific form mentioned.
 3. When someone discusses their possession, project, pet, or creation, extract it
    as a SEPARATE possessive entity — not just the person, not just the bare noun:
@@ -137,8 +161,8 @@ ENTITY RULES:
       from opinion statements ("from each according to his ability, to each
       according to his need", "the enemy of my enemy", "the perpetrator of a
       crime", "genuinely disadvantaged"). They are not retrievable referents.
-7. Each entity appears exactly ONCE. Classify using the ENTITY TYPES provided.
-8. Only extract entities from CURRENT MESSAGES — PREVIOUS MESSAGES are context only.
+7. Each entity appears exactly ONCE. Classify using the ENTITY_TYPES provided.
+8. Only extract entities from CURRENT_MESSAGES — PREVIOUS_MESSAGES are context only.
 9. Skip didactic / tutorial scaffolding when the assistant is teaching a topic
    (Unix commands, astronomy, cooking technique, etc.). Tutorial example values
    ("/path/to/source", "file.txt", "<username>") and explanatory primitives are
@@ -176,7 +200,7 @@ FACT RULES:
    [Episode N] headers). If the SAME fact appears across multiple episodes,
    extract it ONCE and list ALL episode indices — do NOT emit duplicate facts
    with different episode numbers.
-5. You MAY use PREVIOUS MESSAGES to resolve what the current message refers to.
+5. You MAY use PREVIOUS_MESSAGES to resolve what the current message refers to.
    If the current message reacts to or confirms prior context, extract the full
    contextualized fact (e.g., "all the hard work paid off" → extract what paid off).
 6. Extract liberally — when in doubt, extract the fact. Preferences, opinions,
@@ -203,100 +227,21 @@ FACT RULES:
    thing should have at least one edge with the speaker (or an entity they
    own/identify with) as source, not an observation noun.
 
-OUTPUT DISCIPLINE:
-- Entity `name` is a literal mention from CURRENT MESSAGES, ≤5 words. NEVER use a full
-  sentence, action item, goal statement, or quoted aspiration as a name.
-  BAD: "Establish a firm training/onboarding program",
-       "Secure competitive advantage through IP",
-       "Decide whether to expand into Europe next quarter".
-  GOOD (terse-name fallback for the same source content): "training program",
-       "competitive advantage", "European expansion" — extract the topical noun
-       phrase, not the full proposition. Multi-word topic names like "watercolor
-       painting" or "VR gaming" remain valid (see ENTITY RULE 4).
-- The `fact` field is one self-contained sentence. NEVER include reasoning, hedging
-  ("appears to", "implies", "suggests"), parenthetical commentary, or schema-description text.
-- `relation_type` is SCREAMING_SNAKE_CASE letters/underscores only. NEVER spaces,
-  punctuation, or sentences.
-- Output ONLY the JSON specified by the response schema. No preamble, no trailing notes,
-  no explanation of choices.
+{output_discipline}
 
-<NEGATIVE EXAMPLES>
-Each example shows the source phrasing, what NOT to extract as an entity, and
-what to keep instead. The skipped content still survives — inside fact text on
-the surviving entity.
+{negative_examples_section}
 
-A) Multiple-choice / response-option scaffolding
-   Source (assistant): "Reply with one of: Strongly disagree, Disagree, Agree,
-   or Strongly agree."
-   SKIP entities: "Agree", "Strongly disagree", "the four answers", "responses".
-   KEEP: nothing — this is template instruction, not a fact about the user.
-
-B) Specific clock times
-   Source: "The sun rises around 8:47 am in Stockholm on the winter solstice."
-   SKIP entities: "8:47 am", "2:48 pm".
-   KEEP: "Stockholm", "winter solstice". The time stays in the fact text:
-   "The sun rises around 8:47 am in Stockholm on the winter solstice."
-
-C) Quantities / durations / prices / recipe amounts
-   Source: "Berlin and London experience approximately 7.5 hours of daylight
-   on the winter solstice."
-   SKIP entities: "7.5 hours of daylight", "7-8 hours", "6 hours of daylight".
-   KEEP: "Berlin", "London", "winter solstice". Duration stays inside the fact.
-
-   Source: "Mix 1 cup granulated white sugar into 4 cups water to make nectar."
-   SKIP entities: "1 cup granulated white sugar", "4 cups water".
-   KEEP: "sugar-water nectar" (the recipe topic). The amounts stay in the fact.
-
-D) Geographic coordinates
-   Source: "Melbourne is located approximately 37 degrees south of the equator;
-   Stockholm is around 59 degrees north."
-   SKIP entities: "37 degrees south of the equator", "59 degrees north".
-   KEEP: "Melbourne", "Stockholm", "equator". The latitude stays in the fact.
-
-E) Imperative verb-phrase advice from tip lists
-   Source (assistant): "Tips for saving money on groceries: Buy in bulk; Cook
-   in bulk; Plan your meals; Shop sales; Use cashback apps."
-   SKIP entities: "Buy in bulk", "Cook in bulk", "Plan your meals",
-   "Shop sales", "Use cashback apps".
-   KEEP: "saving money on groceries" (the topical noun phrase). Each tip lives
-   inside a fact attached to that topic, not as its own node.
-
-F) Quoted slogans / idioms / loaded phrases
-   Source (user): "I believe in 'from each according to his ability, to each
-   according to his need' — the rich are too highly taxed though."
-   SKIP entities: "from each according to his ability...", "the enemy of my
-   enemy", "the rich", "genuinely disadvantaged".
-   KEEP: the User entity. The belief and opinion go into facts in plain
-   language (e.g. user -> BELIEVES_IN -> Marxist distribution principle).
-
-G) Direct speaker-to-target edges (no fragmenting through scenery)
-   Source: Calvin: "I took that pic in Tokyo last night. The skyline was
-   stunning! [...]"  Dave: "Wow, the night skyline really pops with those
-   city lights. I gotta take a trip there soon!"  Calvin (later): "Touring
-   with Frank Ocean last week was wild. Tokyo was unreal — the crowd was
-   insane."
-   SKIP edge sources/targets: city lights -> Tokyo,
-        night skyline -> Tokyo, insane crowd -> Tokyo.
-   KEEP edges: Calvin -> TOOK_PHOTO_IN -> Tokyo
-               Calvin -> PERFORMED_IN -> Tokyo
-               Calvin -> TOURED_WITH -> Frank Ocean
-               Dave -> WANTS_TO_VISIT -> Tokyo
-   Descriptive scenery ("stunning skyline", "city lights pop", "insane
-   crowd") goes inside the fact text on these direct edges, not as its
-   own edges.
-</NEGATIVE EXAMPLES>
-
-<ENTITY TYPES>
+<ENTITY_TYPES>
 {context['entity_types']}
-</ENTITY TYPES>
+</ENTITY_TYPES>
 {_build_edge_types_section(context.get('edge_types'))}
-<PREVIOUS MESSAGES>
+<PREVIOUS_MESSAGES>
 {to_prompt_json([ep for ep in context['previous_episodes']])}
-</PREVIOUS MESSAGES>
+</PREVIOUS_MESSAGES>
 
-<CURRENT MESSAGES>
+<CURRENT_MESSAGES>
 {context['episode_content']}
-</CURRENT MESSAGES>
+</CURRENT_MESSAGES>
 
 {context['custom_extraction_instructions']}
 """

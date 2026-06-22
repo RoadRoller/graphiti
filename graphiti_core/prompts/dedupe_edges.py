@@ -14,11 +14,21 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from typing import Any, Protocol, TypedDict
+from pydantic import (
+    BaseModel,
+    Field,
+)
+from typing import (
+    Any,
+    Protocol,
+    TypedDict,
+)
 
-from pydantic import BaseModel, Field
-
-from .models import Message, PromptFunction, PromptVersion
+from .models import (
+    Message,
+    PromptFunction,
+    PromptVersion,
+)
 
 
 class EdgeDuplicate(BaseModel):
@@ -53,32 +63,32 @@ def resolve_edge(context: dict[str, Any]) -> list[Message]:
 NEVER mark facts as duplicates if they have key differences, particularly around numeric values, dates, or key qualifiers.
 
 IMPORTANT constraints:
-- duplicate_facts: ONLY idx values from EXISTING FACTS (NEVER include FACT INVALIDATION CANDIDATES)
-- contradicted_facts: idx values from EITHER list (EXISTING FACTS or FACT INVALIDATION CANDIDATES)
-- The idx values are continuous across both lists (INVALIDATION CANDIDATES start where EXISTING FACTS end)
+- duplicate_facts: ONLY idx values from EXISTING_FACTS (NEVER include FACT_INVALIDATION_CANDIDATES)
+- contradicted_facts: idx values from EITHER list (EXISTING_FACTS or FACT_INVALIDATION_CANDIDATES)
+- The idx values are continuous across both lists (INVALIDATION CANDIDATES start where EXISTING_FACTS end)
 
-<EXISTING FACTS>
+<EXISTING_FACTS>
 {context['existing_edges']}
-</EXISTING FACTS>
+</EXISTING_FACTS>
 
-<FACT INVALIDATION CANDIDATES>
+<FACT_INVALIDATION_CANDIDATES>
 {context['edge_invalidation_candidates']}
-</FACT INVALIDATION CANDIDATES>
+</FACT_INVALIDATION_CANDIDATES>
 
-<NEW FACT>
+<NEW_FACT>
 {context['new_edge']}
-</NEW FACT>
+</NEW_FACT>
 
 You will receive TWO lists of facts with CONTINUOUS idx numbering across both lists.
-EXISTING FACTS are indexed first, followed by FACT INVALIDATION CANDIDATES.
+EXISTING_FACTS are indexed first, followed by FACT_INVALIDATION_CANDIDATES.
 
 1. DUPLICATE DETECTION:
-   - If the NEW FACT represents identical factual information as any fact in EXISTING FACTS, return those idx values in duplicate_facts.
+   - If the NEW_FACT represents identical factual information as any fact in EXISTING_FACTS, return those idx values in duplicate_facts.
    - If no duplicates, return an empty list for duplicate_facts.
 
 2. CONTRADICTION DETECTION:
-   - Determine which facts the NEW FACT contradicts from either list.
-   - A fact from EXISTING FACTS can be both a duplicate AND contradicted (e.g., semantically the same but the new fact updates/supersedes it).
+   - Determine which facts the NEW_FACT contradicts from either list.
+   - A fact from EXISTING_FACTS can be both a duplicate AND contradicted (e.g., semantically the same but the new fact updates/supersedes it).
    - Return all contradicted idx values in contradicted_facts.
    - If no contradictions, return an empty list for contradicted_facts.
 

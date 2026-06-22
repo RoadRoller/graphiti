@@ -12,36 +12,71 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
+
+Central registry for all LLM prompts used in Graphiti's ingestion and maintenance pipeline.
+
+Extraction pipeline philosophy:
+- **Structured KG mode** (standalone): ``extract_nodes`` + ``extract_edges`` via node/edge operations.
+  Conservative entity policy — "when in doubt, do NOT extract" — suited for clean knowledge graphs.
+- **Agent memory mode** (combined): ``extract_nodes_and_edges`` in a single LLM call.
+  Liberal fact extraction — "when in doubt, extract the fact" — optimized for retrieval when
+  original messages are not available at query time.
+
+Choose the pipeline that matches your use case; mixing both on the same graph may produce
+inconsistent entity granularity.
 """
 
-from typing import Any, Protocol, TypedDict
+from typing import (
+    Any,
+    Protocol,
+    TypedDict,
+)
 
-from .dedupe_edges import Prompt as DedupeEdgesPrompt
-from .dedupe_edges import Versions as DedupeEdgesVersions
-from .dedupe_edges import versions as dedupe_edges_versions
-from .dedupe_nodes import Prompt as DedupeNodesPrompt
-from .dedupe_nodes import Versions as DedupeNodesVersions
-from .dedupe_nodes import versions as dedupe_nodes_versions
-from .eval import Prompt as EvalPrompt
-from .eval import Versions as EvalVersions
-from .eval import versions as eval_versions
-from .extract_edges import Prompt as ExtractEdgesPrompt
-from .extract_edges import Versions as ExtractEdgesVersions
-from .extract_edges import versions as extract_edges_versions
-from .extract_nodes import Prompt as ExtractNodesPrompt
-from .extract_nodes import Versions as ExtractNodesVersions
-from .extract_nodes import versions as extract_nodes_versions
-from .extract_nodes_and_edges import Prompt as ExtractNodesAndEdgesPrompt
-from .extract_nodes_and_edges import Versions as ExtractNodesAndEdgesVersions
-from .extract_nodes_and_edges import versions as extract_nodes_and_edges_versions
-from .models import Message, PromptFunction
+from .dedupe_edges import (
+    Prompt as DedupeEdgesPrompt,
+    Versions as DedupeEdgesVersions,
+    versions as dedupe_edges_versions,
+)
+from .dedupe_nodes import (
+    Prompt as DedupeNodesPrompt,
+    Versions as DedupeNodesVersions,
+    versions as dedupe_nodes_versions,
+)
+from .eval import (
+    Prompt as EvalPrompt,
+    Versions as EvalVersions,
+    versions as eval_versions,
+)
+from .extract_edges import (
+    Prompt as ExtractEdgesPrompt,
+    Versions as ExtractEdgesVersions,
+    versions as extract_edges_versions,
+)
+from .extract_nodes import (
+    Prompt as ExtractNodesPrompt,
+    Versions as ExtractNodesVersions,
+    versions as extract_nodes_versions,
+)
+from .extract_nodes_and_edges import (
+    Prompt as ExtractNodesAndEdgesPrompt,
+    Versions as ExtractNodesAndEdgesVersions,
+    versions as extract_nodes_and_edges_versions,
+)
+from .models import (
+    Message,
+    PromptFunction,
+)
 from .prompt_helpers import DO_NOT_ESCAPE_UNICODE
-from .summarize_nodes import Prompt as SummarizeNodesPrompt
-from .summarize_nodes import Versions as SummarizeNodesVersions
-from .summarize_nodes import versions as summarize_nodes_versions
-from .summarize_sagas import Prompt as SummarizeSagasPrompt
-from .summarize_sagas import Versions as SummarizeSagasVersions
-from .summarize_sagas import versions as summarize_sagas_versions
+from .summarize_nodes import (
+    Prompt as SummarizeNodesPrompt,
+    Versions as SummarizeNodesVersions,
+    versions as summarize_nodes_versions,
+)
+from .summarize_sagas import (
+    Prompt as SummarizeSagasPrompt,
+    Versions as SummarizeSagasVersions,
+    versions as summarize_sagas_versions,
+)
 
 
 class PromptLibrary(Protocol):

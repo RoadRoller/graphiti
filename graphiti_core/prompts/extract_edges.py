@@ -14,12 +14,23 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from typing import Any, Protocol, TypedDict
+from pydantic import (
+    BaseModel,
+    Field,
+)
+from typing import (
+    Any,
+    Protocol,
+    TypedDict,
+)
 
-from pydantic import BaseModel, Field
-
-from .models import Message, PromptFunction, PromptVersion
+from .models import (
+    Message,
+    PromptFunction,
+    PromptVersion,
+)
 from .prompt_helpers import to_prompt_json
+from .snippets import attribute_hard_rules_fact
 
 
 class Edge(BaseModel):
@@ -129,14 +140,14 @@ def edge(context: dict[str, Any]) -> list[Message]:
 </REFERENCE_TIME>
 {edge_types_section}
 # TASK
-Extract all factual relationships between the given ENTITIES based on the CURRENT MESSAGE.
+Extract all factual relationships between the given ENTITIES based on the CURRENT_MESSAGE.
 Only extract facts that:
 - involve two DISTINCT ENTITIES from the ENTITIES list,
-- are clearly stated or unambiguously implied in the CURRENT MESSAGE,
+- are clearly stated or unambiguously implied in the CURRENT_MESSAGE,
     and can be represented as edges in a knowledge graph.
 - Facts should include entity names rather than pronouns whenever possible.
 
-You may use information from the PREVIOUS MESSAGES only to disambiguate references or support continuity.
+You may use information from PREVIOUS_MESSAGES only to disambiguate references or support continuity.
 
 
 {context['custom_extraction_instructions']}
@@ -192,48 +203,21 @@ def extract_attributes(context: dict[str, Any]) -> list[Message]:
         Message(
             role='user',
             content=f"""\
-Given the following FACT, its REFERENCE TIME, and any EXISTING ATTRIBUTES, update the attributes.
+Given the following FACT, its REFERENCE_TIME, and any EXISTING_ATTRIBUTES, update the attributes.
 
-HARD RULES — violating any of these is a failure:
-
-1. Each attribute value MUST be one of:
-   (a) a clean value copied or directly normalized from the FACT,
-   (b) the existing value already in EXISTING ATTRIBUTES (preserved unchanged), or
-   (c) null / omitted, when neither (a) nor (b) applies.
-
-2. NEVER write reasoning, justification, or commentary into any field. Specifically:
-   - NEVER include parenthetical explanations like "(implied by ...)", "(Context: ...)",
-     "(not explicitly stated ...)", "(based on ...)".
-   - NEVER include first-person or deliberative phrases like "I should...", "However...",
-     "Sticking to...", "Since no...", "the instruction is to...", "must be kept...".
-   - NEVER list alternatives or candidates inside one field ("X, or Y, or maybe Z").
-   - NEVER explain why a value is null. If unknown, set the field to null and stop.
-
-3. Each attribute schema description tells you the FORMAT a real value should take. The
-   description text is NEVER itself a value. NEVER copy schema description text into the field.
-
-4. The literal strings "null", "N/A", "Not specified", "unknown", "none", "not provided",
-   or any sentence describing absence are NOT valid values. If no value is supported by
-   the FACT, set the field to null (or omit it) — do not write a sentence.
-
-5. Each attribute value must be a short, well-formed instance of the type the field
-   describes. If you cannot produce a clean value of that type from the FACT, the field is null.
-
-6. Use REFERENCE TIME to resolve any relative temporal expressions in the fact.
-
-7. Preserve existing attribute values unless the FACT explicitly provides a new value.
+{attribute_hard_rules_fact}
 
 <FACT>
 {context['fact']}
 </FACT>
 
-<REFERENCE TIME>
+<REFERENCE_TIME>
 {context['reference_time']}
-</REFERENCE TIME>
+</REFERENCE_TIME>
 
-<EXISTING ATTRIBUTES>
+<EXISTING_ATTRIBUTES>
 {to_prompt_json(context['existing_attributes'])}
-</EXISTING ATTRIBUTES>
+</EXISTING_ATTRIBUTES>
 """,
         ),
     ]
@@ -247,12 +231,12 @@ def extract_timestamps(context: dict[str, Any]) -> list[Message]:
         ),
         Message(
             role='user',
-            content=f"""Given a FACT and its REFERENCE TIME, determine when the fact became true
+            content=f"""Given a FACT and its REFERENCE_TIME, determine when the fact became true
 (valid_at) and when it stopped being true (invalid_at).
 
 Rules:
-- Resolve relative expressions ("last week", "2 years ago", "yesterday") using REFERENCE TIME.
-- If the fact is ongoing (present tense), set valid_at to REFERENCE TIME.
+- Resolve relative expressions ("last week", "2 years ago", "yesterday") using REFERENCE_TIME.
+- If the fact is ongoing (present tense), set valid_at to REFERENCE_TIME.
 - If a change or end is expressed, set invalid_at to the relevant time.
 - Leave both null if no time is stated or resolvable.
 - If only a date is mentioned (no time), assume 00:00:00.
@@ -263,9 +247,9 @@ Rules:
 {context['fact']}
 </FACT>
 
-<REFERENCE TIME>
+<REFERENCE_TIME>
 {context['reference_time']}
-</REFERENCE TIME>
+</REFERENCE_TIME>
 """,
         ),
     ]
@@ -279,12 +263,12 @@ def extract_timestamps_batch(context: dict[str, Any]) -> list[Message]:
         ),
         Message(
             role='user',
-            content=f"""Given a list of FACTS with their REFERENCE TIMES, determine when each fact
+            content=f"""Given a list of FACTS with their REFERENCE_TIMES, determine when each fact
 became true (valid_at) and when it stopped being true (invalid_at).
 
 Rules:
-- Resolve relative expressions ("last week", "2 years ago", "yesterday") using each fact's REFERENCE TIME.
-- If the fact is ongoing (present tense), set valid_at to its REFERENCE TIME.
+- Resolve relative expressions ("last week", "2 years ago", "yesterday") using each fact's REFERENCE_TIME.
+- If the fact is ongoing (present tense), set valid_at to its REFERENCE_TIME.
 - If a change or end is expressed, set invalid_at to the relevant time.
 - Leave both null if no time is stated or resolvable.
 - If only a date is mentioned (no time), assume 00:00:00.

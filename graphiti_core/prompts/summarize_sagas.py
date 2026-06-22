@@ -14,13 +14,26 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from typing import Any, Protocol, TypedDict
-
-from pydantic import BaseModel, Field
+from pydantic import (
+    BaseModel,
+    Field,
+)
+from typing import (
+    Any,
+    Protocol,
+    TypedDict,
+)
 
 from graphiti_core.utils.text_utils import MAX_SUMMARY_CHARS
-
-from .models import Message, PromptFunction, PromptVersion
+from .models import (
+    Message,
+    PromptFunction,
+    PromptVersion,
+)
+from .snippets import (
+    meta_language_ban,
+    meta_language_ban_saga_extra,
+)
 
 
 class SagaSummary(BaseModel):
@@ -69,15 +82,8 @@ new durable facts, return the existing knowledge unchanged.
         ),
         Message(
             role='user',
-            content=f"""NEVER use meta-language verbs: "mentioned", "discussed", "noted", "stated", \
-"described", "referenced", "indicated", "reported", "talked about", "brought up" — \
-these describe conversational dynamics, not knowledge. State facts directly instead.
-NEVER refer to the messages, conversation, thread, or participants' communicative acts. \
-The output must read as if no conversation happened — only the facts matter.
-NEVER begin with "This conversation", "The thread", "In this thread", or "The discussion".
-NEVER infer preferences or habits from a single passing mention. When a person \
-explicitly states a preference ("I prefer X", "I love X", "I always do X"), \
-capture it as a stated preference attributed to that person.
+            content=f"""{meta_language_ban}
+{meta_language_ban_saga_extra}
 
 Your task: extract all durable knowledge from the MESSAGES below and produce a \
 factual knowledge brief for the topic "{saga_name}".

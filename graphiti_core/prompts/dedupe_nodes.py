@@ -14,11 +14,21 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from typing import Any, Protocol, TypedDict
+from pydantic import (
+    BaseModel,
+    Field,
+)
+from typing import (
+    Any,
+    Protocol,
+    TypedDict,
+)
 
-from pydantic import BaseModel, Field
-
-from .models import Message, PromptFunction, PromptVersion
+from .models import (
+    Message,
+    PromptFunction,
+    PromptVersion,
+)
 from .prompt_helpers import to_prompt_json
 
 
@@ -51,6 +61,7 @@ class Versions(TypedDict):
 
 
 def node(context: dict[str, Any]) -> list[Message]:
+    # Deprecated: not used in production. Use nodes (batch dedup) instead.
     return [
         Message(
             role='system',
@@ -60,25 +71,25 @@ def node(context: dict[str, Any]) -> list[Message]:
         Message(
             role='user',
             content=f"""
-<PREVIOUS MESSAGES>
+<PREVIOUS_MESSAGES>
 {to_prompt_json(context['previous_episodes'])}
-</PREVIOUS MESSAGES>
+</PREVIOUS_MESSAGES>
 
-<CURRENT MESSAGE>
+<CURRENT_MESSAGE>
 {context['episode_content']}
-</CURRENT MESSAGE>
+</CURRENT_MESSAGE>
 
-<NEW ENTITY>
+<NEW_ENTITY>
 {to_prompt_json(context['extracted_node'])}
-</NEW ENTITY>
+</NEW_ENTITY>
 
-<ENTITY TYPE DESCRIPTION>
+<ENTITY_TYPE_DESCRIPTION>
 {to_prompt_json(context['entity_type_description'])}
-</ENTITY TYPE DESCRIPTION>
+</ENTITY_TYPE_DESCRIPTION>
 
-<EXISTING ENTITIES>
+<EXISTING_ENTITIES>
 {to_prompt_json(context['existing_nodes'])}
-</EXISTING ENTITIES>
+</EXISTING_ENTITIES>
 
 Entities should only be considered duplicates if they refer to the *same real-world object or concept*.
 Semantic Equivalence: if a descriptive label in EXISTING ENTITIES clearly refers to a named entity in context, treat them as duplicates.
@@ -124,23 +135,23 @@ def nodes(context: dict[str, Any]) -> list[Message]:
         Message(
             role='user',
             content=f"""
-<PREVIOUS MESSAGES>
+<PREVIOUS_MESSAGES>
 {to_prompt_json(context['previous_episodes'])}
-</PREVIOUS MESSAGES>
+</PREVIOUS_MESSAGES>
 
-<CURRENT MESSAGE>
+<CURRENT_MESSAGE>
 {context['episode_content']}
-</CURRENT MESSAGE>
+</CURRENT_MESSAGE>
 
 <ENTITIES>
 {to_prompt_json(context['extracted_nodes'])}
 </ENTITIES>
 
-<EXISTING ENTITIES>
+<EXISTING_ENTITIES>
 {to_prompt_json(context['existing_nodes'])}
-</EXISTING ENTITIES>
+</EXISTING_ENTITIES>
 
-Each of the above ENTITIES was extracted from the CURRENT MESSAGE.
+Each of the above ENTITIES was extracted from the CURRENT_MESSAGE.
 For each entity, determine if it is a duplicate of any EXISTING ENTITY.
 Entities should only be considered duplicates if they refer to the *same real-world object or concept*.
 
@@ -180,6 +191,7 @@ Result: duplicate_candidate_id = 0 (synonym — "car" and "vehicle" refer to the
 
 
 def node_list(context: dict[str, Any]) -> list[Message]:
+    # Deprecated: not used in production.
     return [
         Message(
             role='system',
